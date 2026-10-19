@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<title>CleanVibe · Контент</title>
+<script src="https://telegram.org/js/telegram-web-app.js"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@500;600;700;800;900&family=Fredoka:wght@600;700&display=swap" rel="stylesheet">
+<style>
+/* ====== ФИРМЕННЫЕ ЦВЕТА CLEANVIBE (с упаковок на WB) ====== */
+:root{
+  --violet:#4B2A8F;       /* фирменный фиолетовый */
+  --violet-2:#7B4FE0;     /* светлый фиолетовый */
+  --orange:#F7841E;       /* фирменный оранжевый */
+  --orange-soft:#FFEBD8;
+  --lilac:#EEE7FB;
+  --bg:#F6F2FD;
+  --card:#FFFFFF;
+  --ink:#2A1858;
+  --muted:#7E73A0;
+  --line:#E9E2F7;
+  --up:#1BA672; --down:#E5484D;
+  --inst:#E1306C; --tiktok:#2A1858; --youtube:#FF3B30; --vk:#2787F5;
+  --radius:22px;
+}
+:root[data-theme="dark"]{
+  --bg:#130B28; --card:#1F1540; --ink:#F1ECFF; --muted:#A79CC8; --line:#2E2257;
+  --lilac:#2A1D55; --orange-soft:#3B2618; --tiktok:#F1ECFF; --violet:#B79BFF;
+}
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+html,body{background:var(--bg);color:var(--ink);font-family:Rubik,system-ui,-apple-system,sans-serif}
+body{min-height:100vh;padding-bottom:calc(84px + env(safe-area-inset-bottom))}
+.wrap{max-width:520px;margin:0 auto;padding:0 16px}
+button{font:inherit;color:inherit;border:0;background:none;cursor:pointer}
+.num{font-variant-numeric:tabular-nums}
+
+/* header */
+header{position:relative;overflow:hidden;padding:16px 0 12px}
+.bubbles{position:absolute;inset:0;pointer-events:none}
+.bubbles span{position:absolute;border-radius:50%;border:1.5px solid #ffffff;background:radial-gradient(circle at 32% 28%,#ffffffee 0 12%,#ffffff40 30%,#d8c9ff55 70%);box-shadow:inset -4px -6px 12px #b79bff40}
+.top{position:relative;display:flex;align-items:center;justify-content:space-between;gap:12px}
+.logo{font-family:Fredoka,Rubik,sans-serif;font-weight:700;font-size:30px;letter-spacing:-.5px;line-height:1;display:flex;align-items:flex-start}
+.logo .c{color:var(--violet)} .logo .v{color:var(--orange)}
+.logo i{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--orange);margin:2px 0 0 2px;box-shadow:7px 4px 0 -1.5px var(--orange)}
+.tag{display:inline-block;margin-top:10px;position:relative;background:var(--violet);color:#fff;font-weight:800;font-size:11px;letter-spacing:.6px;text-transform:uppercase;padding:6px 12px;border-radius:10px}
+:root[data-theme="dark"] .tag{background:#4B2A8F}
+.seg{position:relative;display:flex;background:var(--card);border:1px solid var(--line);border-radius:16px;padding:4px;margin-top:14px}
+.seg button{flex:1;padding:9px 0;border-radius:12px;font-size:13px;font-weight:700;color:var(--muted);transition:.2s}
+.seg button.on{background:var(--orange);color:#fff;box-shadow:0 6px 14px -6px var(--orange)}
+
+/* cards */
+.card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-top:12px}
+.label{font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.7px}
+.big{font-size:42px;font-weight:900;letter-spacing:-1px;line-height:1.05;margin-top:6px;text-transform:uppercase}
+.mid{font-size:24px;font-weight:800;letter-spacing:-.5px;margin-top:4px;white-space:nowrap}
+.delta{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:700;padding:3px 8px;border-radius:999px;margin-left:8px;vertical-align:middle;letter-spacing:0;text-transform:none}
+.delta.up{color:var(--up);background:color-mix(in srgb,var(--up) 13%,transparent)}
+.delta.down{color:var(--down);background:color-mix(in srgb,var(--down) 13%,transparent)}
+.hero{background:linear-gradient(140deg,#6B3FD1 0%,#4B2A8F 60%,#36196F 100%);color:#fff;border:0;position:relative;overflow:hidden}
+.hero .label{color:#ffffffb8}
+.hero .delta.up,.hero .delta.down{color:#fff;background:var(--orange)}
+.hero .delta.down{background:#ffffff2e}
+.hero svg{display:block;width:100%;height:100px;margin-top:10px;position:relative}
+.hero .b{position:absolute;border-radius:50%;border:1.5px solid #ffffff55;background:radial-gradient(circle at 32% 28%,#ffffff70 0 10%,#ffffff10 40%,transparent 70%)}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:10px}
+.grid2 .card{margin:0}
+.pf{display:flex;align-items:center;gap:8px;font-weight:700;font-size:14px}
+.dot{width:10px;height:10px;border-radius:50%;flex:none}
+.bar{height:6px;border-radius:6px;background:var(--lilac);margin-top:10px;overflow:hidden}
+.bar b{display:block;height:100%;border-radius:6px}
+.small{font-size:12px;color:var(--muted);font-weight:600;margin-top:4px}
+.kpi-o{background:var(--orange);border:0;color:#fff}
+.kpi-o .label,.kpi-o .small{color:#ffffffd0}
+.kpi-o .delta.up,.kpi-o .delta.down{color:#fff;background:#ffffff33}
+.h2{font-size:17px;font-weight:900;letter-spacing:.2px;text-transform:uppercase;margin:24px 0 2px;display:flex;justify-content:space-between;align-items:center;color:var(--violet)}
+.link{color:var(--orange);font-size:13px;font-weight:700;text-transform:none;letter-spacing:0}
+
+/* sku */
+.sku{display:flex;flex-direction:column;gap:12px}
+.sku-top{display:flex;gap:12px;align-items:center}
+.thumb{width:56px;height:74px;border-radius:14px;flex:none;overflow:hidden;background:var(--lilac);display:grid;place-items:center;font-size:24px}
+.thumb img{width:100%;height:100%;object-fit:cover;display:block}
+.sku-name{font-weight:700;font-size:14px;line-height:1.3}
+.art{font-size:12px;color:var(--muted);font-weight:500;margin-top:4px;line-height:1.4}
+.art b{color:var(--orange);font-weight:700}
+.stats{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.stat{background:var(--bg);border-radius:12px;padding:8px 10px}
+.stat b{display:block;font-size:14px;font-weight:800;white-space:nowrap;letter-spacing:-.2px}
+.stat span{font-size:11px;color:var(--muted);font-weight:600}
+.chips{display:flex;gap:8px;overflow-x:auto;margin-top:12px;padding-bottom:2px;scrollbar-width:none}
+.chips::-webkit-scrollbar{display:none}
+.chip{white-space:nowrap;padding:8px 14px;border-radius:12px;border:1px solid var(--line);background:var(--card);font-size:13px;font-weight:700;color:var(--muted)}
+.chip.on{background:var(--violet);border-color:var(--violet);color:#fff}
+:root[data-theme="dark"] .chip.on{background:#4B2A8F;border-color:#4B2A8F}
+
+/* leaderboard */
+.vid{display:flex;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid var(--line)}
+.vid:last-child{border-bottom:0}
+.rank{width:32px;height:32px;border-radius:11px;display:grid;place-items:center;font-weight:900;font-size:14px;background:var(--lilac);color:var(--violet);flex:none}
+.rank.g{background:var(--orange);color:#fff}.rank.s{background:#7B4FE0;color:#fff}.rank.b{background:#FFC27D;color:#6B3400}
+.vid-main{flex:1;min-width:0}
+.vid-title{font-weight:700;font-size:14px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.vid-meta{font-size:12px;color:var(--muted);font-weight:500;margin-top:3px;display:flex;align-items:center;gap:6px}
+.vid-views{text-align:right;font-weight:800;font-size:15px}
+.go{display:inline-block;margin-top:4px;font-size:12px;font-weight:700;color:var(--orange);padding:4px 10px;border-radius:999px;background:var(--orange-soft)}
+.empty{text-align:center;color:var(--muted);font-weight:600;padding:24px 0}
+
+/* nav */
+nav{position:fixed;left:0;right:0;bottom:0;background:color-mix(in srgb,var(--card) 92%,transparent);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);border-top:1px solid var(--line);padding:8px 16px calc(8px + env(safe-area-inset-bottom));z-index:5}
+nav .in{max-width:520px;margin:0 auto;display:flex}
+nav button{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:11px;font-weight:700;color:var(--muted);padding:4px 0}
+nav button svg{width:22px;height:22px}
+nav button.on{color:var(--violet)}
+nav button.on svg{color:var(--orange)}
+.page{display:none;animation:fade .25s ease}
+.page.on{display:block}
+@keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+.foot{text-align:center;color:var(--muted);font-size:11px;font-weight:600;margin:22px 0 6px}
+</style>
+</head>
+<body>
+<header>
+  <div class="bubbles"><span style="width:84px;height:84px;right:-18px;top:-20px"></span><span style="width:38px;height:38px;right:78px;top:14px"></span><span style="width:18px;height:18px;right:58px;top:62px"></span></div>
+  <div class="wrap">
+    <div class="top"><div class="logo"><span class="c">Clean</span><span class="v">Vibe</span><i></i></div></div>
+    <div class="tag">Результаты контент-завода</div>
+    <div class="seg" id="period">
+      <button data-p="7">7 дней</button>
+      <button data-p="30" class="on">30 дней</button>
+      <button data-p="all">Всё время</button>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+  <!-- ОБЗОР -->
+  <section class="page on" id="p-overview">
+    <div class="card hero"><span class="b" style="width:120px;height:120px;right:-30px;top:-40px"></span><span class="b" style="width:40px;height:40px;right:70px;top:20px"></span>
+      <div class="label">Всего просмотров</div>
+      <div class="big num"><span id="totalViews">—</span><span id="viewsDelta"></span></div>
+      <svg id="viewsChart" viewBox="0 0 320 96" preserveAspectRatio="none"></svg>
+    </div>
+    <div class="grid2" id="platforms"></div>
+
+    <div class="grid2">
+      <div class="card kpi-o">
+        <div class="label">Продажи</div>
+        <div class="mid num" id="sumRevenue">—</div>
+        <div class="small num" id="sumOrders">—</div>
+      </div>
+      <div class="card">
+        <div class="label">Переходы</div>
+        <div class="mid num" id="sumClicks">—</div>
+        <div class="small num" id="sumCR">—</div>
+      </div>
+    </div>
+
+    <div class="h2">Топ роликов <button class="link" data-goto="videos">Все →</button></div>
+    <div class="card" id="topVideos" style="padding-top:4px;padding-bottom:4px"></div>
+  </section>
+
+  <!-- ТОВАРЫ -->
+  <section class="page" id="p-skus">
+    <div class="grid2">
+      <div class="card kpi-o">
+        <div class="label">Продажи по подменным</div>
+        <div class="mid num" id="sRevenue">—</div>
+        <div class="small num" id="sOrders">—</div>
+      </div>
+      <div class="card">
+        <div class="label">Переходы в карточку</div>
+        <div class="mid num" id="sClicks">—</div>
+        <div class="small num" id="sCR">—</div>
+      </div>
+    </div>
+    <div class="chips" id="skuSort">
+      <button class="chip on" data-s="revenue">По выручке</button>
+      <button class="chip" data-s="orders">По заказам</button>
+      <button class="chip" data-s="clicks">По переходам</button>
+    </div>
+    <div id="skuList"></div>
+  </section>
+
+  <!-- РОЛИКИ -->
+  <section class="page" id="p-videos">
+    <div class="chips" id="pfFilter"></div>
+    <div class="card" id="leaderboard" style="padding-top:4px;padding-bottom:4px"></div>
+  </section>
+
+  <div class="foot" id="updated"></div>
+</main>
+
+<nav><div class="in">
+  <button class="on" data-goto="overview"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M3 13h4v7H3zM10 8h4v12h-4zM17 4h4v16h-4z"/></svg>Обзор</button>
+  <button data-goto="skus"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 3h6v3l2 3v11a1 1 0 0 1-1 1H8a1 1 0 0 1-1-1V9l2-3z"/><path d="M7 13h10"/></svg>Товары</button>
+  <button data-goto="videos"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="3"/><path d="M10 9.5v5l4.5-2.5z" fill="currentColor"/></svg>Ролики</button>
+</div></nav>
+
+<script>
+/* =====================================================================
+   ДАННЫЕ
+   Сейчас здесь демо-данные. Для боевой версии замени loadData() на
+   запрос к своему API / JSON-файлу в том же формате:
+
+   {
+     updatedAt: "2026-10-19T12:00:00Z",
+     dates: ["2026-07-22", ... , "2026-10-19"],          // дни по порядку
+     videos: [{ id, platform: "inst"|"tiktok"|"youtube"|"vk",
+                title, url, sku, published: "YYYY-MM-DD",
+                daily: [просмотры за каждый день из dates] }],
+     skus:   [{ sku, name, img, article, subArticle,   // subArticle — подменный
+                daily: [{ orders, revenue, clicks }] }] // по дням из dates
+   }
+   ===================================================================== */
+async function loadData(){
+  // return await (await fetch('/api/report?client=cleanvibe')).json();
+  return makeDemo();
+}
+
+const PLATFORMS = {
+  inst:    {name:'Instagram', color:'var(--inst)'},
+  tiktok:  {name:'TikTok',    color:'var(--tiktok)'},
+  youtube: {name:'YouTube',   color:'var(--youtube)'},
+  vk:      {name:'VK',        color:'var(--vk)'}
+};
+
+function makeDemo(){
+  let s = 7;
+  const r = () => { s = s + 0x6D2B79F5 | 0; let t = Math.imul(s ^ s >>> 15, 1 | s); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; };
+  const N = 90, today = new Date(); today.setHours(12,0,0,0);
+  const dates = [...Array(N)].map((_, i) => { const d = new Date(today); d.setDate(d.getDate() - (N - 1 - i)); return d.toISOString().slice(0,10); });
+  // реальные товары CleanVibe с WB; подменные артикулы, цены продаж и цифры — демо
+  const IMG = 'https://mow-basket-cdn-';
+  const skus = [
+    {sku:'sofa',  name:'Спрей-очиститель «Антипятна» для мебели, ковров и текстиля, 500 мл', article:'1068120639', subArticle:'—', price:603, base:16,
+     img:IMG+'41.geobasket.ru/vol10681/part1068120/1068120639/images/c246x328/1.webp'},
+    {sku:'grease',name:'Антижир для кухни, спрей 500 мл', article:'1142217052', subArticle:'—', price:586, base:13,
+     img:IMG+'54.geobasket.ru/vol11422/part1142217/1142217052/images/c246x328/1.webp'},
+    {sku:'oxy',   name:'Отбеливатель-пятновыводитель для белого белья, 1000 мл', article:'988054277', subArticle:'—', price:564, base:6,
+     img:IMG+'19.geobasket.ru/vol9880/part988054/988054277/images/c246x328/1.webp'},
+    {sku:'facade',name:'Средство для кухонных фасадов, универсальный очиститель', article:'1810253777', subArticle:'—', price:621, base:5,
+     img:IMG+'19.geobasket.ru/vol18102/part1810253/1810253777/images/c246x328/1.webp'}
+  ];
+  const topics = {
+    sofa:['Кот vs светлый диван','Пятно от кофе на ковре — 1 пшик','Чищу диван за 5 минут'],
+    grease:['Сковорода после жарки','Вытяжка как новая','Нагар на духовке — уходит?'],
+    oxy:['Вернул белизну носкам','Отбеливаю без хлора','Белая футболка после 10 стирок'],
+    facade:['Жирные фасады на кухне','Глянцевые фасады без разводов','Уборка кухни за 15 минут']
+  };
+  const pfs = ['inst','tiktok','youtube','vk'], pfW = {inst:1, tiktok:1.6, youtube:.7, vk:.5};
+  const videos = []; let id = 1;
+  for (let k = 0; k < 34; k++){
+    const sk = skus[Math.floor(r()*skus.length)], pf = pfs[Math.floor(r()*4)];
+    const pub = Math.floor(r()*N);
+    const peak = (3000 + r()*r()*140000) * pfW[pf];
+    const daily = dates.map((_, i) => i < pub ? 0 : Math.round(peak * Math.exp(-(i - pub)/(2 + r()*3)) * (.8 + r()*.4) + (i > pub ? peak*.004 : 0)));
+    const t = topics[sk.sku][Math.floor(r()*3)];
+    videos.push({id:id++, platform:pf, title:t, url:'https://example.com/video/'+id, sku:sk.sku, published:dates[pub], daily});
+  }
+  skus.forEach(sk => {
+    sk.daily = dates.map((_, i) => {
+      const trend = .45 + i/N*1.1;
+      const orders = Math.round(sk.base * trend * (.5 + r()));
+      return {orders, revenue: orders*sk.price, clicks: Math.round(orders*(7 + r()*8))};
+    });
+  });
+  return {updatedAt: new Date().toISOString(), dates, videos, skus};
+}
+
+/* ====================== ЛОГИКА ====================== */
+const tg = window.Telegram && window.Telegram.WebApp;
+const $ = id => document.getElementById(id);
+const fmt = n => Math.round(n).toLocaleString('ru-RU');
+const short = n => n >= 1e6 ? (n/1e6).toLocaleString('ru-RU',{maximumFractionDigits:1})+' млн'
+                 : n >= 1e4 ? (n/1e3).toLocaleString('ru-RU',{maximumFractionDigits:1})+' тыс' : fmt(n);
+const rub = n => fmt(n) + ' ₽';
+const sum = a => a.reduce((x,y) => x+y, 0);
+let D, period = '30', skuSort = 'revenue', pfSel = 'all';
+
+function range(p){ const N = D.dates.length; const len = p === 'all' ? N : +p; return [N-len, N]; }
+function prevRange(p){ if (p === 'all') return null; const [a] = range(p); const len = +p; return a - len >= 0 ? [a-len, a] : null; }
+const sl = (arr,[a,b]) => arr.slice(a,b);
+
+function deltaHTML(cur, prev){
+  if (!prev) return '';
+  const d = (cur - prev) / prev * 100; const up = d >= 0;
+  return `<span class="delta ${up?'up':'down'}">${up?'↑':'↓'} ${Math.abs(d).toFixed(0)}%</span>`;
+}
+
+function chart(svg, series){
+  const W = 320, H = 96, max = Math.max(...series) || 1, n = series.length;
+  const pts = series.map((v,i) => [n === 1 ? W/2 : i/(n-1)*W, H - 6 - v/max*(H-14)]);
+  const line = pts.map((p,i) => (i ? 'L' : 'M') + p[0].toFixed(1) + ' ' + p[1].toFixed(1)).join(' ');
+  svg.innerHTML = `<defs><linearGradient id="g" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#fff" stop-opacity=".45"/><stop offset="1" stop-color="#fff" stop-opacity="0"/></linearGradient></defs>
+    <path d="${line} L${W} ${H} L0 ${H}Z" fill="url(#g)"/>
+    <path d="${line}" fill="none" stroke="#fff" stroke-width="2.5" stroke-linejoin="round" vector-effect="non-scaling-stroke"/>`;
+  const last = pts[pts.length-1]; const svgBox = svg.getBoundingClientRect();
+  const k = svgBox.width ? svgBox.height/H * W/svgBox.width : 1;
+  svg.innerHTML += `<ellipse cx="${last[0]-3}" cy="${last[1]}" rx="${5*k}" ry="5" fill="#F7841E" stroke="#fff" stroke-width="2" vector-effect="non-scaling-stroke"/>`;
+}
+
+function videoViews(v, rg){ return sum(sl(v.daily, rg)); }
+
+function videoRow(v, views, i){
+  const pf = PLATFORMS[v.platform], cls = ['g','s','b'][i] || '';
+  const d = new Date(v.published).toLocaleDateString('ru-RU',{day:'numeric',month:'short'});
+  return `<div class="vid">
+    <div class="rank ${cls}">${i+1}</div>
+    <div class="vid-main">
+      <div class="vid-title">${v.title}</div>
+      <div class="vid-meta"><span class="dot" style="background:${pf.color}"></span>${pf.name} · ${d}</div>
+    </div>
+    <div class="vid-views num">${short(views)}<br><button class="go" data-url="${v.url}">Смотреть ↗</button></div>
+  </div>`;
+}
+
+function render(){
+  const rg = range(period), prg = prevRange(period);
+
+  // просмотры
+  const daily = D.dates.map((_,i) => sum(D.videos.map(v => v.daily[i])));
+  const total = sum(sl(daily, rg));
+  $('totalViews').textContent = short(total);
+  $('viewsDelta').innerHTML = deltaHTML(total, prg && sum(sl(daily, prg)));
+  chart($('viewsChart'), sl(daily, rg));
+
+  const byPf = {}; Object.keys(PLATFORMS).forEach(k => byPf[k] = 0);
+  D.videos.forEach(v => byPf[v.platform] += videoViews(v, rg));
+  $('platforms').innerHTML = Object.entries(PLATFORMS).map(([k,p]) => {
+    const share = total ? byPf[k]/total*100 : 0;
+    return `<div class="card"><div class="pf"><span class="dot" style="background:${p.color}"></span>${p.name}</div>
+      <div class="mid num">${short(byPf[k])}</div>
+      <div class="bar"><b style="width:${share}%;background:${p.color}"></b></div>
+      <div class="small">${share.toFixed(0)}% просмотров</div></div>`;
+  }).join('');
+
+  // продажи / переходы
+  const agg = sk => { const d = sl(sk.daily, rg); return {orders:sum(d.map(x=>x.orders)), revenue:sum(d.map(x=>x.revenue)), clicks:sum(d.map(x=>x.clicks))}; };
+  const rows = D.skus.map(sk => ({...sk, ...agg(sk)}));
+  const T = {orders:sum(rows.map(r=>r.orders)), revenue:sum(rows.map(r=>r.revenue)), clicks:sum(rows.map(r=>r.clicks))};
+  const prevRev = prg && sum(D.skus.map(sk => sum(sl(sk.daily, prg).map(x=>x.revenue))));
+  const prevClk = prg && sum(D.skus.map(sk => sum(sl(sk.daily, prg).map(x=>x.clicks))));
+  const cr = T.clicks ? (T.orders/T.clicks*100).toFixed(1) : '0';
+  $('sumRevenue').innerHTML = $('sRevenue').innerHTML = rub(T.revenue);
+  $('sumOrders').innerHTML = $('sOrders').innerHTML = fmt(T.orders) + ' шт' + deltaHTML(T.revenue, prevRev);
+  $('sumClicks').innerHTML = $('sClicks').innerHTML = fmt(T.clicks);
+  $('sumCR').innerHTML = $('sCR').innerHTML = 'Конверсия ' + cr + '%' + deltaHTML(T.clicks, prevClk);
+
+  const maxV = Math.max(...rows.map(r => r[skuSort])) || 1;
+  rows.sort((a,b) => b[skuSort] - a[skuSort]);
+  $('skuList').innerHTML = rows.map(r => `<div class="card sku">
+    <div class="sku-top"><div class="thumb">${r.img ? `<img src="${r.img}" alt="" loading="lazy" onerror="this.replaceWith('🧴')">` : '🧴'}</div>
+      <div><div class="sku-name">${r.name}</div><div class="art">Подменный арт. <b>${r.subArticle}</b> · осн. ${r.article}</div></div></div>
+    <div class="stats">
+      <div class="stat"><b class="num">${short(r.revenue)} ₽</b><span>выручка</span></div>
+      <div class="stat"><b class="num">${fmt(r.orders)}</b><span>заказы, шт</span></div>
+      <div class="stat"><b class="num">${short(r.clicks)}</b><span>переходы</span></div>
+    </div>
+    <div class="bar" style="margin-top:0"><b style="width:${r[skuSort]/maxV*100}%;background:var(--orange)"></b></div>
+  </div>`).join('');
+
+  // лидерборд
+  const ranked = D.videos.map(v => ({v, views: videoViews(v, rg)})).filter(x => x.views > 0).sort((a,b) => b.views - a.views);
+  $('topVideos').innerHTML = ranked.slice(0,3).map((x,i) => videoRow(x.v, x.views, i)).join('') || '<div class="empty">Нет роликов за период</div>';
+  const list = ranked.filter(x => pfSel === 'all' || x.v.platform === pfSel);
+  $('leaderboard').innerHTML = list.map((x,i) => videoRow(x.v, x.views, i)).join('') || '<div class="empty">Нет роликов за период</div>';
+
+  const cnt = k => ranked.filter(x => k === 'all' || x.v.platform === k).length;
+  $('pfFilter').innerHTML = [['all','Все'], ...Object.entries(PLATFORMS).map(([k,p]) => [k,p.name])]
+    .map(([k,n]) => `<button class="chip ${pfSel===k?'on':''}" data-pf="${k}">${n} · ${cnt(k)}</button>`).join('');
+
+  $('updated').textContent = 'Обновлено ' + new Date(D.updatedAt).toLocaleString('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
+}
+
+function haptic(){ try { tg && tg.HapticFeedback.selectionChanged(); } catch(e){} }
+function openLink(url){ if (tg && tg.openLink) tg.openLink(url); else window.open(url, '_blank'); }
+function go(page){
+  document.querySelectorAll('.page').forEach(p => p.classList.toggle('on', p.id === 'p-'+page));
+  document.querySelectorAll('nav button').forEach(b => b.classList.toggle('on', b.dataset.goto === page));
+  window.scrollTo({top:0, behavior:'smooth'}); haptic();
+}
+
+document.addEventListener('click', e => {
+  const t = e.target.closest('button'); if (!t) return;
+  if (t.dataset.p){ period = t.dataset.p; document.querySelectorAll('#period button').forEach(b => b.classList.toggle('on', b === t)); haptic(); render(); }
+  else if (t.dataset.goto) go(t.dataset.goto);
+  else if (t.dataset.s){ skuSort = t.dataset.s; document.querySelectorAll('#skuSort .chip').forEach(b => b.classList.toggle('on', b === t)); haptic(); render(); }
+  else if (t.dataset.pf){ pfSel = t.dataset.pf; haptic(); render(); }
+  else if (t.dataset.url) openLink(t.dataset.url);
+});
+
+function applyTheme(){
+  const dark = tg && tg.colorScheme ? tg.colorScheme === 'dark' : matchMedia('(prefers-color-scheme: dark)').matches;
+  document.documentElement.dataset.theme = dark ? 'dark' : 'light';
+  try { const bg = getComputedStyle(document.documentElement).getPropertyValue('--bg').trim();
+        tg && tg.setHeaderColor(bg); tg && tg.setBackgroundColor(bg); } catch(e){}
+}
+
+(async () => {
+  if (tg){ tg.ready(); tg.expand(); tg.onEvent('themeChanged', applyTheme); }
+  applyTheme();
+  D = await loadData();
+  render();
+})();
+</script>
+</body>
+</html>
