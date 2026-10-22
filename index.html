@@ -200,22 +200,25 @@ nav button.on svg{color:var(--orange)}
 <script>
 /* =====================================================================
    ДАННЫЕ
-   Сейчас здесь демо-данные. Для боевой версии замени loadData() на
-   запрос к своему API / JSON-файлу в том же формате:
+   Приложение читает data.json (его раз в сутки собирает scripts/update.py).
+   Если файла ещё нет — показывает демо-данные. Формат:
 
    {
      updatedAt: "2026-10-19T12:00:00Z",
      dates: ["2026-07-22", ... , "2026-10-19"],          // дни по порядку
      videos: [{ id, platform: "inst"|"tiktok"|"youtube"|"vk",
-                title, url, sku, published: "YYYY-MM-DD",
+                title, url, account, published: "YYYY-MM-DD",
                 daily: [просмотры за каждый день из dates] }],
-     skus:   [{ sku, name, img, article, subArticle,   // subArticle — подменный
-                daily: [{ orders, revenue, clicks }] }] // по дням из dates
+     skus:   [{ sku, name, article, vendor,              // article — арт. WB, vendor — артикул продавца
+                daily: [{ orders, revenue, clicks, carts }] }] // по дням из dates
    }
    ===================================================================== */
 async function loadData(){
-  // return await (await fetch('/api/report?client=cleanvibe')).json();
-  return makeDemo();
+  try {
+    const r = await fetch('data.json?t=' + Date.now(), {cache:'no-store'});
+    if (r.ok){ const d = await r.json(); if (d.dates && d.dates.length) return d; }
+  } catch(e){}
+  const d = makeDemo(); d.demo = true; return d;   // пока робот не собрал данные — демо
 }
 
 const PLATFORMS = {
@@ -233,13 +236,13 @@ function makeDemo(){
   // реальные товары CleanVibe с WB; подменные артикулы, цены продаж и цифры — демо
   const IMG = 'https://mow-basket-cdn-';
   const skus = [
-    {sku:'sofa',  name:'Спрей-очиститель «Антипятна» для мебели, ковров и текстиля, 500 мл', article:'1068120639', subArticle:'—', price:603, base:16,
+    {sku:'sofa',  name:'Спрей-очиститель «Антипятна» для мебели, ковров и текстиля, 500 мл', article:'1068120639', vendor:'—', price:603, base:16,
      img:IMG+'41.geobasket.ru/vol10681/part1068120/1068120639/images/c246x328/1.webp'},
-    {sku:'grease',name:'Антижир для кухни, спрей 500 мл', article:'1142217052', subArticle:'—', price:586, base:13,
+    {sku:'grease',name:'Антижир для кухни, спрей 500 мл', article:'1142217052', vendor:'—', price:586, base:13,
      img:IMG+'54.geobasket.ru/vol11422/part1142217/1142217052/images/c246x328/1.webp'},
-    {sku:'oxy',   name:'Отбеливатель-пятновыводитель для белого белья, 1000 мл', article:'988054277', subArticle:'—', price:564, base:6,
+    {sku:'oxy',   name:'Отбеливатель-пятновыводитель для белого белья, 1000 мл', article:'988054277', vendor:'—', price:564, base:6,
      img:IMG+'19.geobasket.ru/vol9880/part988054/988054277/images/c246x328/1.webp'},
-    {sku:'facade',name:'Средство для кухонных фасадов, универсальный очиститель', article:'1810253777', subArticle:'—', price:621, base:5,
+    {sku:'facade',name:'Средство для кухонных фасадов, универсальный очиститель', article:'1810253777', vendor:'—', price:621, base:5,
      img:IMG+'19.geobasket.ru/vol18102/part1810253/1810253777/images/c246x328/1.webp'}
   ];
   const topics = {
@@ -270,6 +273,7 @@ function makeDemo(){
 
 /* ====================== ЛОГИКА ====================== */
 const tg = window.Telegram && window.Telegram.WebApp;
+const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const $ = id => document.getElementById(id);
 const fmt = n => Math.round(n).toLocaleString('ru-RU');
 const short = n => n >= 1e6 ? (n/1e6).toLocaleString('ru-RU',{maximumFractionDigits:1})+' млн'
@@ -308,10 +312,10 @@ function videoRow(v, views, i){
   return `<div class="vid">
     <div class="rank ${cls}">${i+1}</div>
     <div class="vid-main">
-      <div class="vid-title">${v.title}</div>
-      <div class="vid-meta"><span class="dot" style="background:${pf.color}"></span>${pf.name} · ${d}</div>
+      <div class="vid-title">${esc(v.title)}</div>
+      <div class="vid-meta"><span class="dot" style="background:${pf.color}"></span>${pf.name}${v.account ? ' · ' + v.account : ''} · ${d}</div>
     </div>
-    <div class="vid-views num">${short(views)}<br><button class="go" data-url="${v.url}">Смотреть ↗</button></div>
+    <div class="vid-views num">${short(views)}<br><button class="go" data-url="${esc(v.url)}">Смотреть ↗</button></div>
   </div>`;
 }
 
@@ -351,7 +355,7 @@ function render(){
   rows.sort((a,b) => b[skuSort] - a[skuSort]);
   $('skuList').innerHTML = rows.map(r => `<div class="card sku">
     <div class="sku-top"><div class="thumb">${r.img ? `<img src="${r.img}" alt="" loading="lazy" onerror="this.replaceWith('🧴')">` : '🧴'}</div>
-      <div><div class="sku-name">${r.name}</div><div class="art">Подменный арт. <b>${r.subArticle}</b> · осн. ${r.article}</div></div></div>
+      <div><div class="sku-name">${esc(r.name)}</div><div class="art">Арт. WB <b>${r.article}</b>${r.vendor ? ' · ' + esc(r.vendor.replace(/^cleanvibe-/i,'')) : ''}</div></div></div>
     <div class="stats">
       <div class="stat"><b class="num">${short(r.revenue)} ₽</b><span>выручка</span></div>
       <div class="stat"><b class="num">${fmt(r.orders)}</b><span>заказы, шт</span></div>
@@ -370,7 +374,7 @@ function render(){
   $('pfFilter').innerHTML = [['all','Все'], ...Object.entries(PLATFORMS).map(([k,p]) => [k,p.name])]
     .map(([k,n]) => `<button class="chip ${pfSel===k?'on':''}" data-pf="${k}">${n} · ${cnt(k)}</button>`).join('');
 
-  $('updated').textContent = 'Обновлено ' + new Date(D.updatedAt).toLocaleString('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
+  $('updated').textContent = (D.demo ? 'Демо-данные · ' : '') + 'Обновлено ' + new Date(D.updatedAt).toLocaleString('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
 }
 
 function haptic(){ try { tg && tg.HapticFeedback.selectionChanged(); } catch(e){} }
