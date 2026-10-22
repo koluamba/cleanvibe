@@ -104,6 +104,30 @@ header{position:relative;overflow:hidden;padding:16px 0 12px}
 .vid-meta{font-size:12px;color:var(--muted);font-weight:500;margin-top:3px;display:flex;align-items:center;gap:6px}
 .vid-views{text-align:right;font-weight:800;font-size:15px}
 .go{display:inline-block;margin-top:4px;font-size:12px;font-weight:700;color:var(--orange);padding:4px 10px;border-radius:999px;background:var(--orange-soft)}
+.blk{margin-top:2px}
+.blk-h{display:flex;justify-content:space-between;align-items:baseline;gap:8px;font-size:11px;font-weight:800;color:var(--muted);text-transform:uppercase;letter-spacing:.6px;margin:2px 2px 6px}
+.blk-h i{font-style:normal;text-transform:none;letter-spacing:0;font-weight:600;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60%}
+.stat .dl{display:block;font-size:11px;font-weight:700;margin-top:1px}
+.stat .dl.up{color:var(--up)} .stat .dl.down{color:var(--down)}
+.stat.hl{background:var(--orange-soft)}
+.mini{display:block;width:100%;height:56px;margin-top:8px}
+.legend{display:flex;gap:12px;flex-wrap:wrap;font-size:11px;font-weight:600;color:var(--muted);margin-top:4px}
+.legend span{display:inline-flex;align-items:center;gap:5px}
+.legend b{display:inline-block;width:10px;height:10px;border-radius:3px}
+.legend b.dash{height:0;border-top:2px dashed var(--muted);border-radius:0;width:12px}
+.code{display:inline-block;font-size:11px;font-weight:700;color:var(--violet);background:var(--lilac);padding:2px 7px;border-radius:7px;margin-right:4px;letter-spacing:.2px}
+.note{font-size:12px;color:var(--muted);font-weight:600;background:var(--bg);border-radius:12px;padding:9px 11px;line-height:1.4}
+.stats.two{grid-template-columns:repeat(2,1fr)}
+details.all{margin-top:18px}
+details.all summary{cursor:pointer;list-style:none;font-size:15px;font-weight:800;color:var(--violet);text-transform:uppercase;letter-spacing:.2px;display:flex;justify-content:space-between;align-items:center}
+details.all summary::-webkit-details-marker{display:none}
+details.all summary::after{content:"＋";color:var(--orange);font-size:18px}
+details.all[open] summary::after{content:"－"}
+.crow{display:flex;justify-content:space-between;gap:10px;padding:10px 0;border-bottom:1px solid var(--line);font-size:13px}
+.crow:last-child{border-bottom:0}
+.crow .n{font-weight:700;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.crow .m{color:var(--muted);font-size:11px;font-weight:600;margin-top:2px}
+.crow .r{text-align:right;font-weight:800;white-space:nowrap}
 .empty{text-align:center;color:var(--muted);font-weight:600;padding:24px 0}
 
 /* nav */
@@ -143,18 +167,7 @@ nav button.on svg{color:var(--orange)}
     </div>
     <div class="grid2" id="platforms"></div>
 
-    <div class="grid2">
-      <div class="card kpi-o">
-        <div class="label">Продажи</div>
-        <div class="mid num" id="sumRevenue">—</div>
-        <div class="small num" id="sumOrders">—</div>
-      </div>
-      <div class="card">
-        <div class="label">Переходы</div>
-        <div class="mid num" id="sumClicks">—</div>
-        <div class="small num" id="sumCR">—</div>
-      </div>
-    </div>
+    <div class="grid2" id="kpiO"></div>
 
     <div class="h2">Топ роликов <button class="link" data-goto="videos">Все →</button></div>
     <div class="card" id="topVideos" style="padding-top:4px;padding-bottom:4px"></div>
@@ -162,29 +175,21 @@ nav button.on svg{color:var(--orange)}
 
   <!-- ТОВАРЫ -->
   <section class="page" id="p-skus">
-    <div class="grid2">
-      <div class="card kpi-o">
-        <div class="label">Продажи по подменным</div>
-        <div class="mid num" id="sRevenue">—</div>
-        <div class="small num" id="sOrders">—</div>
-      </div>
-      <div class="card">
-        <div class="label">Переходы в карточку</div>
-        <div class="mid num" id="sClicks">—</div>
-        <div class="small num" id="sCR">—</div>
-      </div>
-    </div>
+    <div class="grid2" id="kpiS"></div>
     <div class="chips" id="skuSort">
-      <button class="chip on" data-s="revenue">По выручке</button>
+      <button class="chip on" data-s="views">По просмотрам</button>
+      <button class="chip" data-s="revenue">По выручке</button>
       <button class="chip" data-s="orders">По заказам</button>
       <button class="chip" data-s="clicks">По переходам</button>
     </div>
     <div id="skuList"></div>
+    <details class="all card" id="cardsBox"><summary>Все карточки CleanVibe на WB</summary><div id="cardList"></div></details>
   </section>
 
   <!-- РОЛИКИ -->
   <section class="page" id="p-videos">
     <div class="chips" id="pfFilter"></div>
+    <div class="chips" id="codeFilter" style="margin-top:8px"></div>
     <div class="card" id="leaderboard" style="padding-top:4px;padding-bottom:4px"></div>
   </section>
 
@@ -236,20 +241,20 @@ function makeDemo(){
   // реальные товары CleanVibe с WB; подменные артикулы, цены продаж и цифры — демо
   const IMG = 'https://mow-basket-cdn-';
   const skus = [
-    {sku:'sofa',  name:'Спрей-очиститель «Антипятна» для мебели, ковров и текстиля, 500 мл', article:'1068120639', vendor:'—', price:603, base:16,
+    {sku:'WW1262642',  name:'Спрей-очиститель «Антипятна» для мебели, ковров и текстиля, 500 мл', article:'1068120639', vendor:'—', price:603, base:16,
      img:IMG+'41.geobasket.ru/vol10681/part1068120/1068120639/images/c246x328/1.webp'},
-    {sku:'grease',name:'Антижир для кухни, спрей 500 мл', article:'1142217052', vendor:'—', price:586, base:13,
+    {sku:'WW1262654',name:'Антижир для кухни, спрей 500 мл', article:'1142217052', vendor:'—', price:586, base:13,
      img:IMG+'54.geobasket.ru/vol11422/part1142217/1142217052/images/c246x328/1.webp'},
-    {sku:'oxy',   name:'Отбеливатель-пятновыводитель для белого белья, 1000 мл', article:'988054277', vendor:'—', price:564, base:6,
+    {sku:'WW1262611',   name:'Отбеливатель-пятновыводитель для белого белья, 1000 мл', article:'988054277', vendor:'—', price:564, base:6,
      img:IMG+'19.geobasket.ru/vol9880/part988054/988054277/images/c246x328/1.webp'},
-    {sku:'facade',name:'Средство для кухонных фасадов, универсальный очиститель', article:'1810253777', vendor:'—', price:621, base:5,
+    {sku:'WW1262688',name:'Средство для кухонных фасадов, универсальный очиститель', article:'1810253777', vendor:'—', price:621, base:5,
      img:IMG+'19.geobasket.ru/vol18102/part1810253/1810253777/images/c246x328/1.webp'}
   ];
   const topics = {
-    sofa:['Кот vs светлый диван','Пятно от кофе на ковре — 1 пшик','Чищу диван за 5 минут'],
-    grease:['Сковорода после жарки','Вытяжка как новая','Нагар на духовке — уходит?'],
-    oxy:['Вернул белизну носкам','Отбеливаю без хлора','Белая футболка после 10 стирок'],
-    facade:['Жирные фасады на кухне','Глянцевые фасады без разводов','Уборка кухни за 15 минут']
+    WW1262642:['Кот vs светлый диван','Пятно от кофе на ковре — 1 пшик','Чищу диван за 5 минут'],
+    WW1262654:['Сковорода после жарки','Вытяжка как новая','Нагар на духовке — уходит?'],
+    WW1262611:['Вернул белизну носкам','Отбеливаю без хлора','Белая футболка после 10 стирок'],
+    WW1262688:['Жирные фасады на кухне','Глянцевые фасады без разводов','Уборка кухни за 15 минут']
   };
   const pfs = ['inst','tiktok','youtube','vk'], pfW = {inst:1, tiktok:1.6, youtube:.7, vk:.5};
   const videos = []; let id = 1;
@@ -259,7 +264,7 @@ function makeDemo(){
     const peak = (3000 + r()*r()*140000) * pfW[pf];
     const daily = dates.map((_, i) => i < pub ? 0 : Math.round(peak * Math.exp(-(i - pub)/(2 + r()*3)) * (.8 + r()*.4) + (i > pub ? peak*.004 : 0)));
     const t = topics[sk.sku][Math.floor(r()*3)];
-    videos.push({id:id++, platform:pf, title:t, url:'https://example.com/video/'+id, sku:sk.sku, published:dates[pub], daily});
+    videos.push({id:id++, platform:pf, title:t, url:'https://example.com/video/'+id, codes:[sk.sku], account:'clean.home010', published:dates[pub], daily});
   }
   skus.forEach(sk => {
     sk.daily = dates.map((_, i) => {
@@ -268,7 +273,8 @@ function makeDemo(){
       return {orders, revenue: orders*sk.price, clicks: Math.round(orders*(7 + r()*8))};
     });
   });
-  return {updatedAt: new Date().toISOString(), dates, videos, skus};
+  skus.forEach(sk => { sk.mapped = true; sk.vendor = sk.article; });
+  return {updatedAt: new Date().toISOString(), dates, videos, skus, cards: []};
 }
 
 /* ====================== ЛОГИКА ====================== */
@@ -280,7 +286,7 @@ const short = n => n >= 1e6 ? (n/1e6).toLocaleString('ru-RU',{maximumFractionDig
                  : n >= 1e4 ? (n/1e3).toLocaleString('ru-RU',{maximumFractionDigits:1})+' тыс' : fmt(n);
 const rub = n => fmt(n) + ' ₽';
 const sum = a => a.reduce((x,y) => x+y, 0);
-let D, period = '30', skuSort = 'revenue', pfSel = 'all';
+let D, period = '30', skuSort = 'views', pfSel = 'all', codeSel = 'all';
 
 function range(p){ const N = D.dates.length; const len = p === 'all' ? N : +p; return [N-len, N]; }
 function prevRange(p){ if (p === 'all') return null; const [a] = range(p); const len = +p; return a - len >= 0 ? [a-len, a] : null; }
@@ -305,6 +311,10 @@ function chart(svg, series){
 }
 
 function videoViews(v, rg){ return sum(sl(v.daily, rg)); }
+const skuOf = c => (D.skus||[]).find(x => (x.codes||[x.sku]).includes(c));
+const skuName = c => { const s = skuOf(c); return s ? s.name : c; };
+const hasSku = (v, sk) => (v.codes||[]).some(c => (sk.codes||[sk.sku]).includes(c));
+const vidTitle = v => (v.codes||[]).length ? [...new Set(v.codes.map(skuName))].join(' + ') : v.title;
 
 function videoRow(v, views, i){
   const pf = PLATFORMS[v.platform], cls = ['g','s','b'][i] || '';
@@ -312,8 +322,9 @@ function videoRow(v, views, i){
   return `<div class="vid">
     <div class="rank ${cls}">${i+1}</div>
     <div class="vid-main">
-      <div class="vid-title">${esc(v.title)}</div>
-      <div class="vid-meta"><span class="dot" style="background:${pf.color}"></span>${pf.name}${v.account ? ' · ' + v.account : ''} · ${d}</div>
+      <div class="vid-title">${esc(vidTitle(v))}</div>
+      <div class="vid-meta"><span class="dot" style="background:${pf.color}"></span>${pf.name}${v.account ? ' · ' + esc(v.account) : ''} · ${d}</div>
+      ${(v.codes||[]).length ? `<div style="margin-top:5px">${v.codes.map(c => `<span class="code">${esc(c)}</span>`).join('')}</div>` : ''}
     </div>
     <div class="vid-views num">${short(views)}<br><button class="go" data-url="${esc(v.url)}">Смотреть ↗</button></div>
   </div>`;
@@ -339,40 +350,118 @@ function render(){
       <div class="small">${share.toFixed(0)}% просмотров</div></div>`;
   }).join('');
 
-  // продажи / переходы
+  // ───── продажи: прямые по подменным, с коэффициентом, вся карточка, реклама ─────
   const agg = sk => { const d = sl(sk.daily, rg); return {orders:sum(d.map(x=>x.orders)), revenue:sum(d.map(x=>x.revenue)), clicks:sum(d.map(x=>x.clicks))}; };
-  const rows = D.skus.map(sk => ({...sk, ...agg(sk)}));
-  const T = {orders:sum(rows.map(r=>r.orders)), revenue:sum(rows.map(r=>r.revenue)), clicks:sum(rows.map(r=>r.clicks))};
-  const prevRev = prg && sum(D.skus.map(sk => sum(sl(sk.daily, prg).map(x=>x.revenue))));
-  const prevClk = prg && sum(D.skus.map(sk => sum(sl(sk.daily, prg).map(x=>x.clicks))));
-  const cr = T.clicks ? (T.orders/T.clicks*100).toFixed(1) : '0';
-  $('sumRevenue').innerHTML = $('sRevenue').innerHTML = rub(T.revenue);
-  $('sumOrders').innerHTML = $('sOrders').innerHTML = fmt(T.orders) + ' шт' + deltaHTML(T.revenue, prevRev);
-  $('sumClicks').innerHTML = $('sClicks').innerHTML = fmt(T.clicks);
-  $('sumCR').innerHTML = $('sCR').innerHTML = 'Конверсия ' + cr + '%' + deltaHTML(T.clicks, prevClk);
+  const aggK = (arr, r, k) => arr ? sum(sl(arr, r).map(x => x[k] || 0)) : 0;
+  const nDays = sl(D.dates, rg).length || 1;
+  const pct = (cur, base) => base ? (cur - base) / base * 100 : null;
+  const dl = (p, inv) => p == null ? '' : `<span class="dl ${(inv ? -p : p) >= 0 ? 'up' : 'down'}">${p >= 0 ? '+' : '−'}${Math.abs(p).toFixed(0)}% к базе</span>`;
+  const vids = D.videos.map(v => ({v, views: videoViews(v, rg)}));
+  const rows = (D.skus||[]).map(sk => {
+    const my = vids.filter(x => hasSku(x.v, sk));
+    const byCode = (sk.codes||[]).map(c => [c, sum(vids.filter(x => (x.v.codes||[]).includes(c)).map(x => x.views)),
+                                          sk.byCodeWB && sk.byCodeWB[c] ? agg({daily: sk.byCodeWB[c]}) : null]);
+    const coef = sk.coef || D.coef || 1.9;
+    const card = sk.card ? {orders: aggK(sk.card, rg, 'orders'), revenue: aggK(sk.card, rg, 'revenue'), clicks: aggK(sk.card, rg, 'clicks')} : null;
+    const ads = sk.ads ? {spend: aggK(sk.ads, rg, 'spend'), orders: aggK(sk.ads, rg, 'orders'), clicks: aggK(sk.ads, rg, 'clicks')} : null;
+    return {...sk, ...agg(sk), coef, cardT: card, adsT: ads, views: sum(my.map(x => x.views)), nvid: my.length, byCode};
+  });
+  const M = rows.filter(r => !r.unknown);
+  const T = {orders:sum(M.map(r=>r.orders)), revenue:sum(M.map(r=>r.revenue)), clicks:sum(M.map(r=>r.clicks)),
+             ko:sum(M.map(r=>r.orders*r.coef)), kr:sum(M.map(r=>r.revenue*r.coef))};
+  const withCard = M.filter(r => r.cardT && r.base && r.base.orders);
+  const cardAvg = sum(withCard.map(r => r.cardT.orders)) / nDays, baseAvg = sum(withCard.map(r => r.base.orders));
+  const growth = withCard.length ? pct(cardAvg, baseAvg) : null;
+  const pre = D.demo ? '' : '≈ ';
+  const kpi = `
+    <div class="card kpi-o"><div class="label">Продажи по подменным</div>
+      <div class="mid num">${pre}${rub(T.revenue)}</div><div class="small num">${fmt(T.orders)} шт · прямые</div></div>
+    <div class="card"><div class="label">С учётом коэф.</div>
+      <div class="mid num">${pre}${rub(T.kr)}</div><div class="small num">≈ ${fmt(T.ko)} шт · ×${(M[0] && M[0].coef || D.coef || 1.9).toLocaleString('ru-RU')}</div></div>
+    <div class="card"><div class="label">Переходы по подменным</div>
+      <div class="mid num">${fmt(T.clicks)}</div><div class="small num">конверсия ${T.clicks ? (T.orders/T.clicks*100).toFixed(1) : '0'}%</div></div>
+    <div class="card"><div class="label">Прирост карточек</div>
+      <div class="mid num">${growth == null ? '—' : (growth >= 0 ? '+' : '−') + Math.abs(growth).toFixed(0) + '%'}</div>
+      <div class="small num">${growth == null ? 'нужна база до старта' : `заказы в день: ${fmt(baseAvg)} → ${fmt(cardAvg)}`}</div></div>`;
+  $('kpiO').innerHTML = $('kpiS').innerHTML = kpi;
 
-  const maxV = Math.max(...rows.map(r => r[skuSort])) || 1;
-  rows.sort((a,b) => b[skuSort] - a[skuSort]);
-  $('skuList').innerHTML = rows.map(r => `<div class="card sku">
-    <div class="sku-top"><div class="thumb">${r.img ? `<img src="${r.img}" alt="" loading="lazy" onerror="this.replaceWith('🧴')">` : '🧴'}</div>
-      <div><div class="sku-name">${esc(r.name)}</div><div class="art">Арт. WB <b>${r.article}</b>${r.vendor ? ' · ' + esc(r.vendor.replace(/^cleanvibe-/i,'')) : ''}</div></div></div>
-    <div class="stats">
-      <div class="stat"><b class="num">${short(r.revenue)} ₽</b><span>выручка</span></div>
+  const key = r => skuSort === 'views' ? r.views : r[skuSort];
+  const maxV = Math.max(1, ...rows.map(key));
+  rows.sort((a,b) => key(b) - key(a) || b.views - a.views);
+
+  const mini = r => {
+    if (!r.card) return '';
+    const ser = sl(r.card, rg).map(x => x.orders), sub = sl(r.daily, rg).map(x => x.orders * r.coef);
+    const n = ser.length, W = 320, H = 56, base = r.base ? r.base.orders : 0;
+    const mx = Math.max(1, base, ...ser), bw = W / n;
+    const y = v => H - 2 - v / mx * (H - 6);
+    let g = '';
+    ser.forEach((v, i) => {
+      g += `<rect x="${i*bw + bw*.15}" y="${y(v)}" width="${bw*.7}" height="${H - 2 - y(v)}" rx="2" fill="var(--lilac)"/>`;
+      const sv = Math.min(sub[i], v);
+      if (sv > 0) g += `<rect x="${i*bw + bw*.15}" y="${y(sv)}" width="${bw*.7}" height="${H - 2 - y(sv)}" rx="2" fill="var(--orange)"/>`;
+    });
+    if (base) g += `<line x1="0" x2="${W}" y1="${y(base)}" y2="${y(base)}" stroke="var(--violet)" stroke-width="1.5" stroke-dasharray="4 4" vector-effect="non-scaling-stroke"/>`;
+    return `<svg class="mini" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none">${g}</svg>
+      <div class="legend"><span><b style="background:var(--lilac)"></b>заказы карточки</span><span><b style="background:var(--orange)"></b>подменные × коэф.</span>${base ? '<span><b class="dash"></b>база до старта</span>' : ''}</div>`;
+  };
+
+  $('skuList').innerHTML = rows.map(r => {
+    const b = r.base, c = r.cardT, a = r.adsT;
+    const cardBlk = c ? `<div class="blk"><div class="blk-h">Вся карточка WB <i>${esc((r.cardNames||[]).map(x => x.replace(/^cleanvibe-/i,'')).join(', '))}</i></div>
+      <div class="stats">
+        <div class="stat"><b class="num">${short(c.clicks)}</b><span>переходы</span>${b ? dl(pct(c.clicks/nDays, b.clicks)) : ''}</div>
+        <div class="stat"><b class="num">${fmt(c.orders)}</b><span>заказы, шт</span>${b ? dl(pct(c.orders/nDays, b.orders)) : ''}</div>
+        <div class="stat"><b class="num">${short(c.revenue)} ₽</b><span>выручка</span>${b ? dl(pct(c.revenue/nDays, b.revenue)) : ''}</div>
+      </div>${mini(r)}</div>`
+      : (r.unknown ? '' : `<div class="note">Карточка WB определится автоматически, когда по кодам появятся переходы</div>`);
+    const adsBlk = a ? `<div class="blk"><div class="blk-h">Реклама WB по карточке <i>ДРР ${c && c.revenue ? (a.spend / c.revenue * 100).toFixed(1) + '%' : '—'}</i></div>
+      <div class="stats">
+        <div class="stat"><b class="num">${short(a.spend)} ₽</b><span>расход</span>${b && b.adSpend != null ? dl(pct(a.spend/nDays, b.adSpend), true) : ''}</div>
+        <div class="stat"><b class="num">${fmt(a.clicks)}</b><span>клики</span>${b && b.adClicks != null ? dl(pct(a.clicks/nDays, b.adClicks)) : ''}</div>
+        <div class="stat"><b class="num">${fmt(a.orders)}</b><span>заказы с рекламы</span>${b && b.adOrders != null ? dl(pct(a.orders/nDays, b.adOrders)) : ''}</div>
+      </div></div>`
+      : (c && D.adsAccess === false ? `<div class="note">Реклама WB появится, когда в токене будет категория «Продвижение»</div>` : '');
+    return `<div class="card sku">
+    <div class="sku-top"><div class="thumb">🧴</div>
+      <div><div class="sku-name">${esc(r.name)}</div><div class="art">${r.unknown ? 'Код из описания, нет в списке товаров' : 'Коды: просмотры роликов · переходы'}</div>
+      <div style="margin-top:6px">${(r.byCode||[]).map(([cd,v,w]) => `<span class="code">${esc(cd)} · ${short(v)}${w ? ' · ' + fmt(w.clicks) : ''}</span>`).join('')}</div></div></div>
+    <div class="blk"><div class="blk-h">Контент</div><div class="stats two">
+      <div class="stat"><b class="num">${short(r.views)}</b><span>просмотры роликов</span></div>
+      <div class="stat"><b class="num">${fmt(r.nvid)}</b><span>роликов</span></div></div></div>
+    <div class="blk"><div class="blk-h">Подменные артикулы · прямые</div><div class="stats">
+      <div class="stat"><b class="num">${fmt(r.clicks)}</b><span>переходы</span></div>
       <div class="stat"><b class="num">${fmt(r.orders)}</b><span>заказы, шт</span></div>
-      <div class="stat"><b class="num">${short(r.clicks)}</b><span>переходы</span></div>
-    </div>
-    <div class="bar" style="margin-top:0"><b style="width:${r[skuSort]/maxV*100}%;background:var(--orange)"></b></div>
-  </div>`).join('');
+      <div class="stat"><b class="num">${short(r.revenue)} ₽</b><span>выручка ${pre.trim()}</span></div></div></div>
+    <div class="blk"><div class="blk-h">С учётом коэффициента <i>×${r.coef.toLocaleString('ru-RU')}</i></div><div class="stats two">
+      <div class="stat hl"><b class="num">${fmt(r.orders * r.coef)}</b><span>заказы, шт</span></div>
+      <div class="stat hl"><b class="num">${short(r.revenue * r.coef)} ₽</b><span>выручка ${pre.trim()}</span></div></div></div>
+    ${cardBlk}${adsBlk}
+    <div class="bar" style="margin-top:2px"><b style="width:${key(r)/maxV*100}%;background:var(--orange)"></b></div>
+  </div>`;
+  }).join('') || '<div class="card empty">Товары появятся, когда в описаниях роликов найдутся коды WW</div>';
+
+  const cards = (D.cards||[]).map(c => ({...c, ...agg(c)})).sort((a,b) => b.revenue - a.revenue);
+  $('cardsBox').style.display = cards.length ? '' : 'none';
+  $('cardList').innerHTML = cards.map(c => `<div class="crow">
+      <div style="min-width:0"><div class="n">${esc((c.vendor||'').replace(/^cleanvibe-/i,'') || c.name)}</div><div class="m">WB ${esc(c.article)} · ${fmt(c.clicks)} переходов</div></div>
+      <div class="r">${short(c.revenue)} ₽<div class="m">${fmt(c.orders)} шт</div></div></div>`).join('');
 
   // лидерборд
   const ranked = D.videos.map(v => ({v, views: videoViews(v, rg)})).filter(x => x.views > 0).sort((a,b) => b.views - a.views);
   $('topVideos').innerHTML = ranked.slice(0,3).map((x,i) => videoRow(x.v, x.views, i)).join('') || '<div class="empty">Нет роликов за период</div>';
-  const list = ranked.filter(x => pfSel === 'all' || x.v.platform === pfSel);
+  const selSku = (D.skus||[]).find(k => k.sku === codeSel);
+  const list = ranked.filter(x => (pfSel === 'all' || x.v.platform === pfSel) && (!selSku || hasSku(x.v, selSku)));
   $('leaderboard').innerHTML = list.map((x,i) => videoRow(x.v, x.views, i)).join('') || '<div class="empty">Нет роликов за период</div>';
 
   const cnt = k => ranked.filter(x => k === 'all' || x.v.platform === k).length;
   $('pfFilter').innerHTML = [['all','Все'], ...Object.entries(PLATFORMS).map(([k,p]) => [k,p.name])]
     .map(([k,n]) => `<button class="chip ${pfSel===k?'on':''}" data-pf="${k}">${n} · ${cnt(k)}</button>`).join('');
+  const codes = (D.skus||[]).map(x => x.sku);
+  const ccnt = c => ranked.filter(x => c === 'all' || hasSku(x.v, D.skus.find(k => k.sku === c))).length;
+  $('codeFilter').style.display = codes.length ? '' : 'none';
+  $('codeFilter').innerHTML = [['all','Все товары'], ...codes.map(c => [c, skuName(c)])]
+    .map(([k,n]) => `<button class="chip ${codeSel===k?'on':''}" data-code="${esc(k)}">${esc(k === 'all' ? n : D.skus.find(x => x.sku === k).name)} · ${ccnt(k)}</button>`).join('');
 
   $('updated').textContent = (D.demo ? 'Демо-данные · ' : '') + 'Обновлено ' + new Date(D.updatedAt).toLocaleString('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
 }
@@ -391,6 +480,7 @@ document.addEventListener('click', e => {
   else if (t.dataset.goto) go(t.dataset.goto);
   else if (t.dataset.s){ skuSort = t.dataset.s; document.querySelectorAll('#skuSort .chip').forEach(b => b.classList.toggle('on', b === t)); haptic(); render(); }
   else if (t.dataset.pf){ pfSel = t.dataset.pf; haptic(); render(); }
+  else if (t.dataset.code){ codeSel = t.dataset.code; haptic(); render(); }
   else if (t.dataset.url) openLink(t.dataset.url);
 });
 
