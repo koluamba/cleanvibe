@@ -31,7 +31,7 @@ MSK = dt.timezone(dt.timedelta(hours=3))           # WB считает дни п
 TODAY = dt.datetime.now(MSK).date()
 SNAP = TODAY - dt.timedelta(days=1)                # данные «по вчерашний день»
 START = dt.date.fromisoformat(CFG["startDate"])
-WB_BACKFILL_MAX = 7                                # сколько дней WB докачивать за один запуск
+WB_BACKFILL_MAX = 25                               # сколько дней WB докачивать за один запуск
 WB_PAUSE = 25                                      # пауза между запросами к WB, сек (лимиты)
 
 ERRORS = []
@@ -58,8 +58,32 @@ def http(method, url, body=None, headers=None, timeout=120):
 
 
 def first_line(s, n=80):
-    s = (s or "").strip().split("\n")[0].strip()
-    return (s[: n - 1] + "…") if len(s) > n else (s or "Без названия")
+    import re
+    lines = [l.strip() for l in (s or "").splitlines() if l.strip()]
+    good = [l for l in lines if not re.search(r"артикул|WW\d+|копир|^#", l, re.I)]
+    s = (good[0] if good else "").strip()
+    return (s[: n - 1] + "…") if len(s) > n else (s or "Ролик без описания")
+
+
+CODE_RE = __import__("re").compile(r"WW\s*(\d{4,})", __import__("re").I)
+
+
+def parse_codes(*texts):
+    """Коды WW из описания ролика → [[код, подпись], ...]. Подпись — текст перед кодом."""
+    import re
+    out, seen = [], set()
+    for t in texts:
+        parts = CODE_RE.split(t or "")
+        for i in range(1, len(parts), 2):
+            code = "WW" + parts[i]
+            if code in seen:
+                continue
+            seen.add(code)
+            label = re.split(r"[:\n()\[\]|•,;]", parts[i - 1])[-1]
+            label = re.sub(r"[^\w\s\-]", " ", label)
+            label = re.sub(r"\s+", " ", label).strip(" -—–_")
+            out.append([code, label[:40]])
+    return out
 
 
 def d(s):
@@ -122,7 +146,7 @@ def collect_instagram():
         out.append(dict(platform="inst", id="ig_" + str(x.get("shortCode") or x.get("id")),
                         url=x.get("url"), title=first_line(x.get("caption")),
                         published=str(pub or SNAP), account=x.get("ownerUsername") or "",
-                        views=int(views)))
+                        codes=parse_codes(x.get("caption")), views=int(views)))
     return out
 
 
@@ -149,7 +173,7 @@ def collect_tiktok():
             continue
         out.append(dict(platform="tiktok", id="tt_" + str(x.get("id")),
                         url=x.get("webVideoUrl"), title=first_line(x.get("text")),
-                        published=str(pub or SNAP),
+                        published=str(pub or SNAP), codes=parse_codes(x.get("text")),
                         account=(x.get("authorMeta") or {}).get("name", ""),
                         views=int(x["playCount"])))
     return out
@@ -193,6 +217,7 @@ def collect_youtube():
         for x in v.get("items", []):
             out.append(dict(platform="youtube", id="yt_" + x["id"], url=f"https://youtu.be/{x['id']}",
                             title=first_line(x["snippet"].get("title")),
+                            codes=parse_codes(x["snippet"].get("title"), x["snippet"].get("description")),
                             published=str(d(x["snippet"].get("publishedAt")) or SNAP),
                             account=owner.get(x["id"], ""),
                             views=int(x.get("statistics", {}).get("viewCount", 0))))
@@ -228,6 +253,7 @@ def collect_vk():
                 continue
             out.append(dict(platform="vk", id=f"vk_{oid}_{x['id']}",
                             url=f"https://vk.com/video{oid}_{x['id']}", title=first_line(x.get("title")),
+                            codes=parse_codes(x.get("title"), x.get("description")),
                             published=str(pub or SNAP), account=name, views=int(x.get("views", 0))))
     return out
 
@@ -248,27 +274,67 @@ def wb_funnel_day(day):
         time.sleep(WB_PAUSE)
 
 
+def wb_subs_day(day, nm_ids):
+    """Статистика по подменным артикулам: прямые запросы вида «ww1262654» в поиске WB."""
+    tok = os.environ["WB_TOKEN"]
+    url = "https://seller-analytics-api.wildberries.ru/api/v2/search-report/product/search-texts"
+    out = []
+    for i in range(0, len(nm_ids), 50):
+        if i:
+            time.sleep(WB_PAUSE)
+        j = http("POST", url, {"currentPeriod": {"start": day, "end": day}, "nmIds": nm_ids[i:i + 50],
+                               "topOrderBy": "openCard", "orderBy": {"field": "openCard", "mode": "desc"},
+                               "limit": 30, "includeSubstitutedSKUs": True, "includeSearchTexts": False},
+                 {"Authorization": tok})
+        out += ((j or {}).get("data") or {}).get("items") or []
+    return out
+
+
+def cur(v):
+    return (v or {}).get("current", 0) if isinstance(v, dict) else (v or 0)
+
+
+def day_list(a, b):
+    out, x = [], a
+    while x <= b:
+        out.append(str(x))
+        x += dt.timedelta(days=1)
+    return out
+
+
+BASE_DAYS = int(CFG.get("baselineDays", 14))
+BASE_START = START - dt.timedelta(days=BASE_DAYS)
+
+
 def collect_wb(raw):
     if not os.environ.get("WB_TOKEN"):
         log("WB_TOKEN не задан — пропускаю WB")
         return
     funnel = raw.setdefault("funnel", {})
+    subs = raw.setdefault("subs", {})
+    code_nm = raw.setdefault("codeNm", {})
     products = raw.setdefault("products", {})
     brand = CFG.get("brand", "").lower()
     only = {int(x) for x in CFG.get("nmIds") or []}
-    days, x = [], START
-    while x <= SNAP:
-        days.append(str(x))
-        x += dt.timedelta(days=1)
-    # недостающие дни + два последних (WB досчитывает данные с задержкой)
-    todo = [s for s in days if s not in funnel]
-    for s in days[-2:]:
+    mapped = {int(n) for c in (CFG.get("products") or []) for n in (c.get("nmIds") or [])}
+
+    # база (до старта) — только воронка; с даты старта — воронка + подменные артикулы
+    days = day_list(BASE_START, SNAP)
+    todo = [s for s in days if s not in funnel or (s >= str(START) and s not in subs)]
+    for s in day_list(max(START, SNAP - dt.timedelta(days=1)), SNAP):   # WB досчитывает 2 последних дня
         if s not in todo:
             todo.append(s)
-    todo = sorted(todo)[-WB_BACKFILL_MAX:] if len(todo) > WB_BACKFILL_MAX else sorted(todo)
-    for i, day in enumerate(todo):
-        if i:
+    todo = sorted(todo)[:WB_BACKFILL_MAX]
+    calls = 0
+
+    def pause():
+        nonlocal calls
+        if calls:
             time.sleep(WB_PAUSE)
+        calls += 1
+
+    for day in todo:
+        pause()
         try:
             items = wb_funnel_day(day)
         except urllib.error.HTTPError as e:
@@ -279,16 +345,103 @@ def collect_wb(raw):
         row = {}
         for it in items:
             p = it["product"]
-            if brand and (p.get("brandName") or "").lower() != brand:
-                continue
-            if only and p["nmId"] not in only:
-                continue
-            s = it["statistic"]["selected"]
-            row[str(p["nmId"])] = [s.get("openCount", 0), s.get("cartCount", 0),
-                                   s.get("orderCount", 0), s.get("orderSum", 0)]
-            products[str(p["nmId"])] = {"title": p.get("title", ""), "vendorCode": p.get("vendorCode", "")}
+            if p["nmId"] not in mapped:
+                if brand and (p.get("brandName") or "").lower() != brand:
+                    continue
+                if only and p["nmId"] not in only:
+                    continue
+            st = it["statistic"]["selected"]
+            row[str(p["nmId"])] = [st.get("openCount", 0), st.get("cartCount", 0),
+                                   st.get("orderCount", 0), st.get("orderSum", 0)]
+            products[str(p["nmId"])] = {"title": p.get("title", ""), "vendorCode": p.get("vendorCode", ""),
+                                        "avgPrice": st.get("avgPrice") or products.get(str(p["nmId"]), {}).get("avgPrice", 0)}
         funnel[day] = row
         log(f"WB {day}: {len(row)} карточек")
+        if day < str(START):
+            continue
+
+        # подменные артикулы: переходы, корзины, заказы по каждому коду WW
+        pause()
+        try:
+            items = wb_subs_day(day, sorted(int(n) for n in products))
+        except urllib.error.HTTPError as e:
+            fail("WB подменные", f"{day}: HTTP {e.code} {e.read()[:200]!r}")
+            if e.code == 429:
+                break
+            continue
+        srow = {}
+        for it in items:
+            m = CODE_RE.search(it.get("text") or "")
+            if not m:
+                continue
+            code, nm = "WW" + m.group(1), str(it.get("nmId"))
+            o, c, n = cur(it.get("openCard")), cur(it.get("addToCart")), cur(it.get("orders"))
+            f = funnel[day].get(nm)
+            price = (f[3] / f[2]) if f and f[2] else products.get(nm, {}).get("avgPrice", 0)
+            a = srow.setdefault(code, [0, 0, 0, 0])
+            a[0] += o; a[1] += c; a[2] += n; a[3] += round(n * (price or 0))
+            if nm not in code_nm.setdefault(code, []):
+                code_nm[code].append(nm)          # на какую карточку ведёт код — WB сообщает сам
+        subs[day] = srow
+        log(f"WB {day}: подменных кодов с активностью — {len(srow)}")
+
+
+def collect_ads(raw):
+    """Внутренняя реклама WB по карточкам бренда (нужна категория токена «Продвижение»)."""
+    tok = os.environ.get("WB_TOKEN")
+    if not tok:
+        return
+    ads = raw.setdefault("ads", {})
+    nms = set(raw.get("products", {}))
+    api = "https://advert-api.wildberries.ru"
+    try:
+        cnt = http("GET", f"{api}/adv/v1/promotion/count", headers={"Authorization": tok})
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            log("Реклама: у токена нет категории «Продвижение» — пропускаю")
+            raw["adsAccess"] = False
+            return
+        raise
+    raw["adsAccess"] = True
+    since = str(BASE_START - dt.timedelta(days=1))
+    ids = []
+    for g in (cnt or {}).get("adverts") or []:
+        if g.get("status") not in (7, 9, 11):
+            continue
+        for a in g.get("advert_list") or []:
+            if g.get("status") in (9, 11) or (a.get("changeTime") or "")[:10] >= since:
+                ids.append(a["advertId"])
+    days = day_list(BASE_START, SNAP)
+    # докачиваем: всё, чего нет, + 3 последних дня (статистика досчитывается)
+    need = [s for s in days if s not in ads] + days[-3:]
+    if not ids or not need:
+        log(f"Реклама: кампаний {len(ids)}")
+        return
+    begin, end = min(need), max(need)
+    if (dt.date.fromisoformat(end) - dt.date.fromisoformat(begin)).days > 30:
+        begin = str(dt.date.fromisoformat(end) - dt.timedelta(days=30))
+    fresh = {s: {} for s in day_list(dt.date.fromisoformat(begin), dt.date.fromisoformat(end))}
+    for i in range(0, len(ids), 50):
+        if i:
+            time.sleep(WB_PAUSE)
+        q = ",".join(str(x) for x in ids[i:i + 50])
+        res = http("GET", f"{api}/adv/v3/fullstats?ids={q}&beginDate={begin}&endDate={end}",
+                   headers={"Authorization": tok}) or []
+        for camp in res:
+            for day in camp.get("days") or []:
+                s = (day.get("date") or "")[:10]
+                if s not in fresh:
+                    continue
+                for app in day.get("apps") or []:
+                    for x in app.get("nms") or []:
+                        nm = str(x.get("nmId"))
+                        if nm not in nms:
+                            continue
+                        r = fresh[s].setdefault(nm, [0, 0, 0, 0, 0])
+                        r[0] += x.get("views", 0); r[1] += x.get("clicks", 0); r[2] += x.get("orders", 0)
+                        r[3] += float(x.get("sum", 0)); r[4] += float(x.get("sum_price", 0))
+    ads.update(fresh)
+    log(f"Реклама: кампаний {len(ids)}, дней {begin}…{end}")
 
 
 # ───────────────────────── Сборка data.json ─────────────────────────
@@ -317,18 +470,94 @@ def build(raw):
             if at in idx:
                 daily[idx[at]] += inc
             prev = views
+        codes = v.get("codes") or []
         videos.append(dict(id=vid, platform=v["platform"], title=v["title"], url=v["url"],
-                           account=v.get("account", ""), published=v["published"], daily=daily))
+                           account=v.get("account", ""), published=v["published"],
+                           codes=[c for c, _ in codes], daily=daily))
 
-    skus = []
     funnel = raw.get("funnel", {})
-    for nm, meta in raw.get("products", {}).items():
-        daily = []
+
+    def wb_daily(nms):
+        out = []
         for s in dates:
-            o, c, n, rub = (funnel.get(s, {}).get(nm) or [0, 0, 0, 0])
-            daily.append({"orders": n, "revenue": rub, "clicks": o, "carts": c})
+            o = c = n = rub = 0
+            for nm in nms:
+                a, b, e, f = funnel.get(s, {}).get(str(nm)) or [0, 0, 0, 0]
+                o, c, n, rub = o + a, c + b, n + e, rub + f
+            out.append({"orders": n, "revenue": rub, "clicks": o, "carts": c})
+        return out
+
+    # все карточки бренда на WB
+    cards = []
+    for nm, meta in raw.get("products", {}).items():
+        daily = wb_daily([nm])
         if any(x["orders"] or x["clicks"] for x in daily):
-            skus.append(dict(sku=nm, name=meta["title"], article=nm, vendor=meta["vendorCode"], daily=daily))
+            cards.append(dict(sku=nm, name=meta["title"], article=nm, vendor=meta["vendorCode"], daily=daily))
+
+    # товары с подменными артикулами WW (из config.json) + коды, найденные в описаниях, но не заданные
+    labels, views_by_code = {}, {}
+    for v in raw.get("videos", {}).values():
+        for c, lab in v.get("codes") or []:
+            if lab and len(lab) > len(labels.get(c, "")):
+                labels[c] = lab
+            labels.setdefault(c, "")
+    subs = raw.get("subs", {})
+
+    def subs_daily(codes):
+        out = []
+        for s in dates:
+            o = c = n = rub = 0
+            for code in codes:
+                a, b, e, f = subs.get(s, {}).get(code) or [0, 0, 0, 0]
+                o, c, n, rub = o + a, c + b, n + e, rub + f
+            out.append({"orders": n, "revenue": rub, "clicks": o, "carts": c})
+        return out
+
+    ads = raw.get("ads", {})
+    code_nm = raw.get("codeNm", {})
+    prods = raw.get("products", {})
+    base_days = [s for s in day_list(BASE_START, START - dt.timedelta(days=1)) if s in funnel]
+    coef_all = float(CFG.get("coef", 1.9))
+
+    def ads_daily(nms, days=None):
+        out = []
+        for s in days or dates:
+            v = c = n = sp = rv = 0
+            for nm in nms:
+                a, b, e, f, g = ads.get(s, {}).get(str(nm)) or [0, 0, 0, 0, 0]
+                v, c, n, sp, rv = v + a, c + b, n + e, sp + f, rv + g
+            out.append({"views": v, "clicks": c, "orders": n, "spend": round(sp), "revenue": round(rv)})
+        return out
+
+    def base_of(nms):
+        if not base_days or not nms:
+            return None
+        card = [funnel.get(s, {}) for s in base_days]
+        k = len(base_days)
+        tot = lambda i: sum((d.get(str(nm)) or [0, 0, 0, 0])[i] for d in card for nm in nms)
+        ad = ads_daily(nms, base_days)
+        has_ads = any(s in ads for s in base_days)
+        return {"days": k, "clicks": tot(0) / k, "orders": tot(2) / k, "revenue": tot(3) / k,
+                "adSpend": sum(x["spend"] for x in ad) / k if has_ads else None,
+                "adOrders": sum(x["orders"] for x in ad) / k if has_ads else None,
+                "adClicks": sum(x["clicks"] for x in ad) / k if has_ads else None}
+
+    skus, known = [], set()
+    for prod in CFG.get("products") or []:
+        codes = [x.upper().replace(" ", "") for x in prod.get("codes") or []]
+        known.update(codes)
+        nms = [str(n) for n in prod.get("nmIds") or []] or \
+              sorted({nm for c in codes for nm in code_nm.get(c, [])})
+        skus.append(dict(sku=prod["name"], name=prod["name"], codes=codes, daily=subs_daily(codes),
+                         byCodeWB={c: subs_daily([c]) for c in codes},
+                         coef=float(prod.get("coef", coef_all)),
+                         nmIds=nms, cardNames=[prods.get(n, {}).get("vendorCode", n) for n in nms],
+                         card=wb_daily(nms) if nms else None,
+                         ads=ads_daily(nms) if nms and raw.get("adsAccess") else None,
+                         base=base_of(nms)))
+    for c in sorted(set(labels) - known):
+        skus.append(dict(sku=c, name=(labels.get(c) or c).capitalize(), codes=[c], unknown=True,
+                         daily=subs_daily([c]), byCodeWB={c: subs_daily([c])}))
 
     return {
         "updatedAt": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
@@ -336,6 +565,9 @@ def build(raw):
         "dates": dates,
         "videos": videos,
         "skus": skus,
+        "cards": cards,
+        "coef": float(CFG.get("coef", 1.9)),
+        "adsAccess": raw.get("adsAccess"),
         "errors": ERRORS,
         "raw": raw,
     }
@@ -361,13 +593,17 @@ def main():
         log(f"{name}: {len(got)} роликов с {CFG['startDate']}")
         for v in got:
             rec = vids.setdefault(v["id"], {"snap": {}})
-            rec.update({k: v[k] for k in ("platform", "url", "title", "published", "account")})
+            rec.update({k: v[k] for k in ("platform", "url", "title", "published", "account", "codes")})
             rec["snap"][str(SNAP)] = max(v["views"], rec["snap"].get(str(SNAP), 0))
 
     try:
         collect_wb(raw)
     except Exception as e:
         fail("WB", e)
+    try:
+        collect_ads(raw)
+    except Exception as e:
+        fail("Реклама WB", e)
 
     out = build(raw)
     with open(DATA_PATH, "w", encoding="utf-8") as f:
