@@ -1,0 +1,58 @@
+name: Обновление данных
+
+on:
+  schedule:
+    - cron: "0 2 * * *"        # каждый день в 05:00 МСК / 10:00 по Макассару
+  workflow_dispatch:            # кнопка «Run workflow» для ручного запуска
+  push:
+    branches: [main]
+    paths-ignore: ["data.json"]
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Сбор данных
+        if: github.event_name != 'push'
+        env:
+          WB_TOKEN: ${{ secrets.WB_TOKEN }}
+          APIFY_TOKEN: ${{ secrets.APIFY_TOKEN }}
+          YOUTUBE_API_KEY: ${{ secrets.YOUTUBE_API_KEY }}
+          VK_TOKEN: ${{ secrets.VK_TOKEN }}
+        run: python scripts/update.py
+
+      - name: Сохранить data.json в репозиторий
+        if: github.event_name != 'push'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898283+github-actions[bot]@users.noreply.github.com"
+          git add data.json
+          git diff --cached --quiet || git commit -m "Данные за $(date -u +%F)"
+          git pull --rebase
+          git push
+
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: "."
+      - id: deployment
+        uses: actions/deploy-pages@v4
