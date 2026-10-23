@@ -375,6 +375,7 @@ function render(){
   // новая выручка = выручка карточек за период − (базовая выручка в день × дней периода)
   const extraRub = sum(withCard.map(r => r.cardT.revenue - r.base.revenue * nDays));
   const extraOrd = sum(withCard.map(r => r.cardT.orders - r.base.orders * nDays));
+  const revBaseDay = sum(withCard.map(r => r.base.revenue)), revNowDay = sum(withCard.map(r => r.cardT.revenue)) / nDays;
   const sgn = v => (v >= 0 ? '+' : '−');
   const pre = D.demo ? '' : '≈ ';
   // подпись базы: «8–21 окт.»
@@ -391,7 +392,7 @@ function render(){
       <div class="mid num">${pre}${rub(T.kr)}</div><div class="small num">≈ ${fmt(T.ko)} шт · ×${(M[0] && M[0].coef || D.coef || 1.9).toLocaleString('ru-RU')}</div></div>
     <div class="card" style="grid-column:1/-1"><div class="label">Прирост карточек</div>
       <div class="mid num">${growth == null ? '—' : (growth >= 0 ? '+' : '−') + Math.abs(growth).toFixed(0) + '%'}</div>
-      <div class="small num">${growth == null ? 'нужна база до старта' : `<b style="color:var(--ink)">${sgn(extraRub)}${short(Math.abs(extraRub))} ₽</b> новой выручки<br>${sgn(extraOrd)}${fmt(Math.abs(extraOrd))} шт · заказы в день ${fmt(baseAvg)} → ${fmt(cardAvg)}`}</div>
+      <div class="small num">${growth == null ? 'нужна база до старта' : `<b style="color:var(--ink)">${sgn(extraRub)}${short(Math.abs(extraRub))} ₽</b> новой выручки<br>${sgn(extraOrd)}${fmt(Math.abs(extraOrd))} шт за период<br>выручка в день: ${short(revBaseDay)} ₽ → <b style="color:var(--ink)">${short(revNowDay)} ₽</b><br>заказы в день: ${fmt(baseAvg)} → ${fmt(cardAvg)}`}</div>
       <div class="small" style="margin-top:8px;line-height:1.4;font-weight:500">${explain}</div></div>`;
   $('kpiO').innerHTML = $('kpiS').innerHTML = kpi;
 
@@ -425,7 +426,7 @@ function render(){
         <div class="stat"><b class="num">${fmt(c.orders)}</b><span>заказы, шт</span>${b ? dl(pct(c.orders/nDays, b.orders)) : ''}</div>
         <div class="stat"><b class="num">${short(c.revenue)} ₽</b><span>выручка</span>${b ? dl(pct(c.revenue/nDays, b.revenue)) : ''}</div>
       </div>${b ? (() => { const er = c.revenue - b.revenue * nDays, eo = c.orders - b.orders * nDays;
-        return `<div class="note" style="margin-top:8px;background:var(--orange-soft);color:var(--ink)">Прирост к базе за период: <b>${sgn(er)}${short(Math.abs(er))} ₽</b> выручки · ${sgn(eo)}${fmt(Math.abs(eo))} заказов</div>`; })() : ''}${mini(r)}</div>`
+        return `<div class="note" style="margin-top:8px;background:var(--orange-soft);color:var(--ink)">Прирост к базе за период: <b>${sgn(er)}${short(Math.abs(er))} ₽</b> выручки · ${sgn(eo)}${fmt(Math.abs(eo))} заказов<br>Выручка в день: ${short(b.revenue)} ₽ до старта → <b>${short(c.revenue / nDays)} ₽</b> сейчас</div>`; })() : ''}${mini(r)}</div>`
       : (r.unknown ? '' : `<div class="note">Карточка WB определится автоматически, когда по кодам появятся переходы</div>`);
     const adsBlk = a ? `<div class="blk"><div class="blk-h">Реклама WB по карточке <i>ДРР ${c && c.revenue ? (a.spend / c.revenue * 100).toFixed(1) + '%' : '—'}</i></div>
       <div class="stats">
@@ -475,7 +476,7 @@ function render(){
   $('codeFilter').innerHTML = [['all','Все товары'], ...codes.map(c => [c, skuName(c)])]
     .map(([k,n]) => `<button class="chip ${codeSel===k?'on':''}" data-code="${esc(k)}">${esc(k === 'all' ? n : D.skus.find(x => x.sku === k).name)} · ${ccnt(k)}</button>`).join('');
 
-  $('updated').textContent = (D.demo ? 'Демо-данные · ' : '') + 'Обновлено ' + new Date(D.updatedAt).toLocaleString('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit'});
+  $('updated').textContent = (D.demo ? 'Демо-данные · ' : '') + 'Обновлено ' + new Date(D.updatedAt).toLocaleString('ru-RU',{day:'numeric',month:'long',hour:'2-digit',minute:'2-digit',timeZoneName:'short'}) + ' (по времени устройства)';
 }
 
 function haptic(){ try { tg && tg.HapticFeedback.selectionChanged(); } catch(e){} }
