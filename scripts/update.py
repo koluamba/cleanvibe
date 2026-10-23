@@ -238,24 +238,37 @@ def collect_youtube():
 
 
 # ───────────────────────── VK ─────────────────────────
+def vk_owner(name):
+    """id123 / club123 / public123 → owner_id без запроса к API."""
+    import re
+    name = name.rstrip("/").split("/")[-1].lstrip("@")
+    m = re.fullmatch(r"(id|club|public)(\d+)", name)
+    if m:
+        return name, (int(m.group(2)) if m.group(1) == "id" else -int(m.group(2)))
+    return name, None
+
+
 def collect_vk():
     owners = [a["vk"] for a in CFG["accounts"] if a.get("vk")]
-    tok = os.environ.get("VK_TOKEN")
     if not owners:
         return []
-    if not tok:
-        log("VK_TOKEN не задан — пропускаю VK")
-        return []
+    tok = os.environ.get("VK_TOKEN")
+    return collect_vk_api(owners, tok) if tok else collect_vk_apify(owners)
+
+
+def collect_vk_api(owners, tok):
+    """Официальный VK API. Нужен ключ ПОЛЬЗОВАТЕЛЯ (сервисный ключ video.get не принимает)."""
     api = "https://api.vk.com/method"
     out = []
-    for name in owners:
-        name = name.rstrip("/").split("/")[-1]
-        r = http("GET", f"{api}/utils.resolveScreenName?screen_name={name}&access_token={tok}&v=5.199")
-        obj = (r or {}).get("response") or {}
-        if not obj:
-            fail("VK", f"{name} не найден")
-            continue
-        oid = obj["object_id"] if obj.get("type") == "user" else -obj["object_id"]
+    for raw_name in owners:
+        name, oid = vk_owner(raw_name)
+        if oid is None:
+            r = http("GET", f"{api}/utils.resolveScreenName?screen_name={name}&access_token={tok}&v=5.199")
+            obj = (r or {}).get("response") or {}
+            if not obj:
+                fail("VK", f"{name} не найден")
+                continue
+            oid = obj["object_id"] if obj.get("type") == "user" else -obj["object_id"]
         res = http("GET", f"{api}/video.get?owner_id={oid}&count=200&access_token={tok}&v=5.199")
         if (res or {}).get("error"):
             fail("VK", f"{name}: {res['error'].get('error_msg')}")
@@ -268,6 +281,31 @@ def collect_vk():
                             url=f"https://vk.com/video{oid}_{x['id']}", title=first_line(x.get("title")),
                             codes=parse_codes(x.get("title"), x.get("description")),
                             published=str(pub or SNAP), account=name, views=int(x.get("views", 0))))
+    return out
+
+
+def collect_vk_apify(owners):
+    """Без токена VK — через Apify (тот же APIFY_TOKEN)."""
+    urls = []
+    for raw_name in owners:
+        name, _ = vk_owner(raw_name)
+        urls.append(f"https://vkvideo.ru/{name}")
+    items = apify("trev0n~vk-video-profile-scraper", {
+        "profileUrls": urls, "includeRecentVideos": True, "maxVideos": 100,
+    })
+    out = []
+    for prof in items:
+        acc = prof.get("screenName") or str(prof.get("ownerId") or prof.get("id") or "")
+        for x in prof.get("recentVideos") or []:
+            pub = d(x.get("addedAt"))
+            if pub and pub < START:
+                continue
+            oid, vid = x.get("ownerId") or prof.get("ownerId"), x.get("id")
+            text = " ".join(str(x.get(k) or "") for k in ("title", "description"))
+            out.append(dict(platform="vk", id=f"vk_{oid}_{vid}",
+                            url=x.get("url") or f"https://vk.com/video{oid}_{vid}",
+                            title=first_line(x.get("title")), codes=parse_codes(text),
+                            published=str(pub or SNAP), account=acc, views=int(x.get("views") or 0)))
     return out
 
 
