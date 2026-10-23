@@ -36,6 +36,13 @@ WB_PAUSE = 25                                      # пауза между за�
 
 ERRORS = []
 
+# секреты: убираем случайные пробелы/переносы строк, которые попадают при копировании
+SECRETS = []
+for _k in ("WB_TOKEN", "APIFY_TOKEN", "YOUTUBE_API_KEY", "VK_TOKEN"):
+    if os.environ.get(_k):
+        os.environ[_k] = os.environ[_k].strip()
+        SECRETS.append(os.environ[_k])
+
 
 def log(*a):
     print(*a, flush=True)
@@ -43,6 +50,12 @@ def log(*a):
 
 def fail(where, e):
     msg = f"{where}: {e}"
+    for sec in SECRETS:                      # никогда не выводим токены в лог и data.json
+        if sec:
+            msg = msg.replace(sec, "***")
+    if "header value" in msg.lower():
+        msg = f"{where}: неверный формат токена (проверь секрет на лишние пробелы/переносы)"
+    msg = msg[:300]
     ERRORS.append(msg)
     log("⚠️ ", msg)
 
