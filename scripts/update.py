@@ -31,8 +31,8 @@ MSK = dt.timezone(dt.timedelta(hours=3))           # WB считает дни п
 TODAY = dt.datetime.now(MSK).date()
 SNAP = TODAY - dt.timedelta(days=1)                # данные «по вчерашний день»
 START = dt.date.fromisoformat(CFG["startDate"])
-WB_BACKFILL_MAX = 25                               # сколько дней WB докачивать за один запуск
-WB_PAUSE = 30                                      # пауза между запросами к WB, сек (лимиты)
+WB_BACKFILL_MAX = 400                              # сколько дней WB перезапрашивать за один запуск
+WB_PAUSE = 21                                      # пауза между запросами к WB, сек (лимит 3 в минуту)
 
 ERRORS = []
 VK_DEBUG = []
@@ -439,15 +439,27 @@ def wb_subs_day(day, nm_ids):
     """Статистика по подменным артикулам: прямые запросы вида «ww1262654» в поиске WB."""
     tok = os.environ["WB_TOKEN"]
     url = "https://seller-analytics-api.wildberries.ru/api/v2/search-report/product/search-texts"
+    LIMIT = 30                       # WB отдаёт максимум 30 строк на запрос
+
+    def ask(chunk):
+        j = http("POST", url, {"currentPeriod": {"start": day, "end": day}, "nmIds": chunk,
+                               "topOrderBy": "openCard", "orderBy": {"field": "openCard", "mode": "desc"},
+                               "limit": LIMIT, "includeSubstitutedSKUs": True, "includeSearchTexts": False},
+                 {"Authorization": tok})
+        items = ((j or {}).get("data") or {}).get("items") or []
+        if len(items) >= LIMIT and len(chunk) > 1:   # упёрлись в лимит — делим карточки пополам, чтобы ничего не потерять
+            half = len(chunk) // 2
+            time.sleep(WB_PAUSE)
+            a = ask(chunk[:half])
+            time.sleep(WB_PAUSE)
+            return a + ask(chunk[half:])
+        return items
+
     out = []
     for i in range(0, len(nm_ids), 50):
         if i:
             time.sleep(WB_PAUSE)
-        j = http("POST", url, {"currentPeriod": {"start": day, "end": day}, "nmIds": nm_ids[i:i + 50],
-                               "topOrderBy": "openCard", "orderBy": {"field": "openCard", "mode": "desc"},
-                               "limit": 30, "includeSubstitutedSKUs": True, "includeSearchTexts": False},
-                 {"Authorization": tok})
-        out += ((j or {}).get("data") or {}).get("items") or []
+        out += ask(nm_ids[i:i + 50])
     return out
 
 
@@ -481,7 +493,9 @@ def collect_wb(raw):
 
     # дни после старта: воронка + подменные артикулы (свежие — первыми)
     days = day_list(START, SNAP) if SNAP >= START else []
-    todo = sorted([s for s in days if s not in funnel or s not in subs], reverse=True)[:WB_BACKFILL_MAX]
+    # каждый запуск перезапрашиваем ВЕСЬ период с даты старта: WB досчитывает поздние
+    # переходы/заказы и записывает выкупы/отмены задним числом на день заказа
+    todo = sorted(days, reverse=True)[:WB_BACKFILL_MAX]
     calls = 0
 
     def pause():
