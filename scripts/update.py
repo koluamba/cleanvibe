@@ -265,12 +265,20 @@ def vk_owner(name):
 def collect_vk():
     owners = [a["vk"] for a in CFG["accounts"] if a.get("vk")]
     out = []
-    if owners:
-        tok = os.environ.get("VK_TOKEN")
+    tok = os.environ.get("VK_TOKEN")
+    if owners and tok:
         try:
-            out = collect_vk_api(owners, tok) if tok else collect_vk_apify(owners)
+            out = collect_vk_api(owners, tok)
         except Exception as e:
-            fail("VK профили", e)
+            fail("VK API", e)
+    # автопоиск: клипы VK, в описании которых есть ваши коды WW
+    codes = [c for p in CFG.get("products") or [] for c in p.get("codes") or []]
+    if codes and CFG.get("vkSearch", True):
+        seen = {v["id"] for v in out}
+        try:
+            out += [v for v in collect_vk_search(codes) if v["id"] not in seen]
+        except Exception as e:
+            fail("VK поиск", e)
     # клипы, добавленные ссылками вручную (config.json → "vkClips")
     links = [u for u in CFG.get("vkClips") or [] if u]
     if links:
@@ -279,6 +287,32 @@ def collect_vk():
             out += [v for v in collect_vk_clips(links) if v["id"] not in seen]
         except Exception as e:
             fail("VK клипы", e)
+    return out
+
+
+def collect_vk_search(codes):
+    """Поиск клипов VK по кодам WW (Apify maximedupre/vk-clips, режим keywords)."""
+    import re
+    items = apify("maximedupre~vk-clips", {"discoveryMethod": "keywords", "keywords": codes, "maxItems": 300})
+    out, wanted = [], {c.upper() for c in codes}
+    for x in items:
+        url = x.get("clipUrl") or x.get("url") or ""
+        m = re.search(r"(?:clip|video)(-?\d+)_(\d+)", url)
+        text = " ".join(str(x.get(k) or "") for k in ("title", "description", "caption"))
+        cs = parse_codes(text)
+        if not m or not any(c in wanted for c, _ in cs):     # только клипы с вашими кодами
+            continue
+        pub = d(x.get("publishedAt"))
+        if pub and pub < START:
+            continue
+        own = x.get("owner") or {}
+        views = (x.get("engagement") or {}).get("views", x.get("views")) or 0
+        oid, vid = m.group(1), m.group(2)
+        out.append(dict(platform="vk", id=f"vk_{oid}_{vid}", url=f"https://vk.com/clip{oid}_{vid}",
+                        title=first_line(text), codes=cs, published=str(pub or SNAP),
+                        account=own.get("handle") or own.get("name") or oid, views=int(views)))
+    VK_DEBUG.append({"search": len(items), "matched": len(out)})
+    log(f"VK поиск по кодам: найдено {len(items)}, с вашими кодами — {len(out)}")
     return out
 
 
