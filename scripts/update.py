@@ -32,7 +32,7 @@ TODAY = dt.datetime.now(MSK).date()
 SNAP = TODAY - dt.timedelta(days=1)                # данные «по вчерашний день»
 START = dt.date.fromisoformat(CFG["startDate"])
 WB_BACKFILL_MAX = 25                               # сколько дней WB докачивать за один запуск
-WB_PAUSE = 25                                      # пауза между запросами к WB, сек (лимиты)
+WB_PAUSE = 30                                      # пауза между запросами к WB, сек (лимиты)
 
 ERRORS = []
 
@@ -60,14 +60,24 @@ def fail(where, e):
     log("⚠️ ", msg)
 
 
-def http(method, url, body=None, headers=None, timeout=120):
+def http(method, url, body=None, headers=None, timeout=120, retries=3):
     data = json.dumps(body).encode() if body is not None else None
     h = {"Content-Type": "application/json"} if body is not None else {}
     h.update(headers or {})
-    req = urllib.request.Request(url, data=data, headers=h, method=method)
-    with urllib.request.urlopen(req, timeout=timeout) as r:
-        txt = r.read().decode()
-        return json.loads(txt) if txt else None
+    for attempt in range(retries + 1):
+        req = urllib.request.Request(url, data=data, headers=h, method=method)
+        try:
+            with urllib.request.urlopen(req, timeout=timeout) as r:
+                txt = r.read().decode()
+                return json.loads(txt) if txt else None
+        except urllib.error.HTTPError as e:
+            if e.code != 429 or attempt == retries:
+                raise
+            wait = int(e.headers.get("X-RateLimit-Retry") or e.headers.get("Retry-After") or 60)
+            if wait > 180:                       # долгая блокировка — докачаем в следующий запуск
+                raise
+            log(f"429: жду {wait} сек и повторяю")
+            time.sleep(wait + 2)
 
 
 def first_line(s, n=80):
@@ -121,7 +131,10 @@ def apify(actor, inp):
         log("APIFY_TOKEN не задан — пропускаю", actor)
         return []
     base = "https://api.apify.com/v2"
-    run = http("POST", f"{base}/acts/{actor}/runs?token={tok}", inp)["data"]
+    try:
+        run = http("POST", f"{base}/acts/{actor}/runs?token={tok}", inp)["data"]
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"Apify {actor}: HTTP {e.code} {e.read()[:300].decode('utf-8', 'replace')}")
     rid = run["id"]
     log(f"Apify {actor}: запуск {rid}")
     for _ in range(40):                                   # до ~40 минут
@@ -286,12 +299,9 @@ def collect_vk_api(owners, tok):
 
 def collect_vk_apify(owners):
     """Без токена VK — через Apify (тот же APIFY_TOKEN)."""
-    urls = []
-    for raw_name in owners:
-        name, _ = vk_owner(raw_name)
-        urls.append(f"https://vkvideo.ru/{name}")
+    names = [vk_owner(x)[0] for x in owners]
     items = apify("trev0n~vk-video-profile-scraper", {
-        "profileUrls": urls, "includeRecentVideos": True, "maxVideos": 100,
+        "screenNames": names, "includeRecentVideos": True, "maxVideos": 100,
     })
     out = []
     for prof in items:
@@ -375,7 +385,10 @@ def collect_wb(raw):
     for s in day_list(max(START, SNAP - dt.timedelta(days=1)), SNAP):   # WB досчитывает 2 последних дня
         if s not in todo:
             todo.append(s)
-    todo = sorted(todo)[:WB_BACKFILL_MAX]
+    # сначала дни после старта (свежие — первыми), потом база
+    todo = sorted([s for s in todo if s >= str(START)], reverse=True) + \
+           sorted([s for s in todo if s < str(START)], reverse=True)
+    todo = todo[:WB_BACKFILL_MAX]
     calls = 0
 
     def pause():
