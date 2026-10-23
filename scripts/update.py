@@ -35,6 +35,7 @@ WB_BACKFILL_MAX = 25                               # сколько дней WB 
 WB_PAUSE = 30                                      # пауза между запросами к WB, сек (лимиты)
 
 ERRORS = []
+VK_DEBUG = []
 
 # секреты: убираем случайные пробелы/переносы строк, которые попадают при копировании
 SECRETS = []
@@ -74,7 +75,7 @@ def http(method, url, body=None, headers=None, timeout=120, retries=3):
             if e.code != 429 or attempt == retries:
                 raise
             wait = int(e.headers.get("X-RateLimit-Retry") or e.headers.get("Retry-After") or 60)
-            if wait > 180:                       # долгая блокировка — докачаем в следующий запуск
+            if wait > 1500:                      # очень долгая блокировка — докачаем в следующий запуск
                 raise
             log(f"429: жду {wait} сек и повторяю")
             time.sleep(wait + 2)
@@ -263,10 +264,45 @@ def vk_owner(name):
 
 def collect_vk():
     owners = [a["vk"] for a in CFG["accounts"] if a.get("vk")]
-    if not owners:
-        return []
-    tok = os.environ.get("VK_TOKEN")
-    return collect_vk_api(owners, tok) if tok else collect_vk_apify(owners)
+    out = []
+    if owners:
+        tok = os.environ.get("VK_TOKEN")
+        try:
+            out = collect_vk_api(owners, tok) if tok else collect_vk_apify(owners)
+        except Exception as e:
+            fail("VK профили", e)
+    # клипы, добавленные ссылками вручную (config.json → "vkClips")
+    links = [u for u in CFG.get("vkClips") or [] if u]
+    if links:
+        seen = {v["id"] for v in out}
+        try:
+            out += [v for v in collect_vk_clips(links) if v["id"] not in seen]
+        except Exception as e:
+            fail("VK клипы", e)
+    return out
+
+
+def collect_vk_clips(links):
+    """Просмотры и описание конкретных клипов по ссылкам — через Apify."""
+    import re
+    items = apify("automation-lab~vk-clips-scraper", {"mode": "clips", "clipUrls": links, "maxItems": len(links)})
+    out = []
+    for x in items:
+        url = x.get("clipUrl") or x.get("url") or ""
+        m = re.search(r"(?:clip|video)(-?\d+)_(\d+)", url)
+        if not m or x.get("views") is None:
+            continue
+        oid, vid = m.group(1), m.group(2)
+        text = " ".join(str(x.get(k) or "") for k in ("title", "caption", "description"))
+        pub = d(x.get("publishedAt"))
+        if pub and pub < START:
+            continue
+        out.append(dict(platform="vk", id=f"vk_{oid}_{vid}", url=url, title=first_line(text),
+                        codes=parse_codes(text), published=str(pub or SNAP),
+                        account=x.get("authorHandle") or x.get("authorName") or (f"id{oid}" if not oid.startswith("-") else f"club{oid[1:]}"),
+                        views=int(x.get("views") or 0)))
+    log(f"VK клипы по ссылкам: {len(out)} из {len(links)}")
+    return out
 
 
 def collect_vk_api(owners, tok):
@@ -304,6 +340,15 @@ def collect_vk_apify(owners):
         "screenNames": names, "includeRecentVideos": True, "maxVideos": 100,
     })
     out = []
+    # диагностика: что вернул скрейпер (без лишних данных), чтобы понять, если ролики не находятся
+    VK_DEBUG.clear()
+    for prof in items:
+        rv = prof.get("recentVideos") or []
+        VK_DEBUG.append({"profile": prof.get("screenName") or prof.get("profileUrl"),
+                         "error": prof.get("error") or prof.get("errorMessage"),
+                         "stats": {k: (prof.get("statistics") or {}).get(k) for k in ("videosCount", "clipsCount")},
+                         "recent": len(rv), "keys": sorted(rv[0].keys()) if rv else [],
+                         "sample": [{k: x.get(k) for k in ("title", "addedAt", "isClip", "views")} for x in rv[:3]]})
     for prof in items:
         acc = prof.get("screenName") or str(prof.get("ownerId") or prof.get("id") or "")
         for x in prof.get("recentVideos") or []:
@@ -321,11 +366,15 @@ def collect_vk_apify(owners):
 
 # ───────────────────────── WB ─────────────────────────
 def wb_funnel_day(day):
+    return wb_funnel_day_range(day, day)
+
+
+def wb_funnel_day_range(start, end):
     tok = os.environ["WB_TOKEN"]
     url = "https://seller-analytics-api.wildberries.ru/api/analytics/v3/sales-funnel/products"
     res, off = [], 0
     while True:
-        j = http("POST", url, {"selectedPeriod": {"start": day, "end": day}, "limit": 1000, "offset": off},
+        j = http("POST", url, {"selectedPeriod": {"start": start, "end": end}, "limit": 1000, "offset": off},
                  {"Authorization": tok})
         p = j["data"]["products"]
         res += p
@@ -379,16 +428,9 @@ def collect_wb(raw):
     only = {int(x) for x in CFG.get("nmIds") or []}
     mapped = {int(n) for c in (CFG.get("products") or []) for n in (c.get("nmIds") or [])}
 
-    # база (до старта) — только воронка; с даты старта — воронка + подменные артикулы
-    days = day_list(BASE_START, SNAP)
-    todo = [s for s in days if s not in funnel or (s >= str(START) and s not in subs)]
-    for s in day_list(max(START, SNAP - dt.timedelta(days=1)), SNAP):   # WB досчитывает 2 последних дня
-        if s not in todo:
-            todo.append(s)
-    # сначала дни после старта (свежие — первыми), потом база
-    todo = sorted([s for s in todo if s >= str(START)], reverse=True) + \
-           sorted([s for s in todo if s < str(START)], reverse=True)
-    todo = todo[:WB_BACKFILL_MAX]
+    # дни после старта: воронка + подменные артикулы (свежие — первыми)
+    days = day_list(START, SNAP) if SNAP >= START else []
+    todo = sorted([s for s in days if s not in funnel or s not in subs], reverse=True)[:WB_BACKFILL_MAX]
     calls = 0
 
     def pause():
@@ -396,6 +438,27 @@ def collect_wb(raw):
         if calls:
             time.sleep(WB_PAUSE)
         calls += 1
+
+    # база до старта — ОДНИМ запросом за весь период (WB строго лимитирует запросы)
+    base_key = f"{BASE_START}..{START - dt.timedelta(days=1)}"
+    if (raw.get("baseAgg") or {}).get("period") != base_key:
+        pause()
+        try:
+            items = wb_funnel_day_range(str(BASE_START), str(START - dt.timedelta(days=1)))
+            agg = {}
+            for it in items:
+                p = it["product"]
+                if p["nmId"] not in mapped and brand and (p.get("brandName") or "").lower() != brand:
+                    continue
+                st = it["statistic"]["selected"]
+                agg[str(p["nmId"])] = [st.get("openCount", 0), st.get("cartCount", 0),
+                                       st.get("orderCount", 0), st.get("orderSum", 0)]
+            raw["baseAgg"] = {"period": base_key, "days": BASE_DAYS, "nm": agg}
+            log(f"WB база {base_key}: {len(agg)} карточек")
+        except urllib.error.HTTPError as e:
+            fail("WB база", f"HTTP {e.code}")
+            if e.code == 429:
+                return
 
     for day in todo:
         pause()
@@ -421,8 +484,6 @@ def collect_wb(raw):
                                         "avgPrice": st.get("avgPrice") or products.get(str(p["nmId"]), {}).get("avgPrice", 0)}
         funnel[day] = row
         log(f"WB {day}: {len(row)} карточек")
-        if day < str(START):
-            continue
 
         # подменные артикулы: переходы, корзины, заказы по каждому коду WW
         pause()
@@ -593,18 +654,25 @@ def build(raw):
             out.append({"views": v, "clicks": c, "orders": n, "spend": round(sp), "revenue": round(rv)})
         return out
 
+    base_agg = raw.get("baseAgg") or {}
+
     def base_of(nms):
-        if not base_days or not nms:
+        if not nms or not (base_agg.get("nm") is not None or base_days):
             return None
-        card = [funnel.get(s, {}) for s in base_days]
-        k = len(base_days)
-        tot = lambda i: sum((d.get(str(nm)) or [0, 0, 0, 0])[i] for d in card for nm in nms)
-        ad = ads_daily(nms, base_days)
-        has_ads = any(s in ads for s in base_days)
+        if base_agg.get("nm") is not None:
+            k = base_agg["days"]
+            tot = lambda i: sum((base_agg["nm"].get(str(nm)) or [0, 0, 0, 0])[i] for nm in nms)
+        else:
+            card = [funnel.get(s, {}) for s in base_days]
+            k = len(base_days)
+            tot = lambda i: sum((d.get(str(nm)) or [0, 0, 0, 0])[i] for d in card for nm in nms)
+        all_base = day_list(BASE_START, START - dt.timedelta(days=1))
+        ad = ads_daily(nms, all_base)
+        ka = sum(1 for s in all_base if s in ads)
         return {"days": k, "clicks": tot(0) / k, "orders": tot(2) / k, "revenue": tot(3) / k,
-                "adSpend": sum(x["spend"] for x in ad) / k if has_ads else None,
-                "adOrders": sum(x["orders"] for x in ad) / k if has_ads else None,
-                "adClicks": sum(x["clicks"] for x in ad) / k if has_ads else None}
+                "adSpend": sum(x["spend"] for x in ad) / ka if ka else None,
+                "adOrders": sum(x["orders"] for x in ad) / ka if ka else None,
+                "adClicks": sum(x["clicks"] for x in ad) / ka if ka else None}
 
     skus, known = [], set()
     for prod in CFG.get("products") or []:
@@ -633,6 +701,7 @@ def build(raw):
         "coef": float(CFG.get("coef", 1.9)),
         "adsAccess": raw.get("adsAccess"),
         "errors": ERRORS,
+        "vkDebug": VK_DEBUG,
         "raw": raw,
     }
 
