@@ -276,7 +276,7 @@ def collect_vk():
             fail("VK API", e)
     # автопоиск: клипы VK, в описании которых есть ваши коды WW
     codes = [c for p in CFG.get("products") or [] for c in p.get("codes") or []]
-    if codes and CFG.get("vkSearch", True):
+    if codes and CFG.get("vkSearch", False):     # поиск VK клипы с кодами не находит — выключен
         seen = {v["id"] for v in out}
         try:
             out += [v for v in collect_vk_search(codes) if v["id"] not in seen]
@@ -284,6 +284,12 @@ def collect_vk():
             fail("VK поиск", e)
     # клипы, добавленные ссылками вручную (config.json → "vkClips")
     links = [u for u in CFG.get("vkClips") or [] if u]
+    # vk.txt рядом с index.html: по одной ссылке на клип в строке
+    txt = os.path.join(ROOT, "vk.txt")
+    if os.path.exists(txt):
+        with open(txt, encoding="utf-8") as f:
+            links += [l.strip() for l in f if "vk." in l and not l.strip().startswith("#")]
+    links = list(dict.fromkeys(links))
     if links:
         seen = {v["id"] for v in out}
         try:
