@@ -126,14 +126,15 @@ def d(s):
 
 
 # ───────────────────────── Apify ─────────────────────────
-def apify(actor, inp):
+def apify(actor, inp, timeout_s=None):
     tok = os.environ.get("APIFY_TOKEN")
     if not tok:
         log("APIFY_TOKEN не задан — пропускаю", actor)
         return []
     base = "https://api.apify.com/v2"
     try:
-        run = http("POST", f"{base}/acts/{actor}/runs?token={tok}", inp)["data"]
+        q = f"&timeout={timeout_s}" if timeout_s else ""
+        run = http("POST", f"{base}/acts/{actor}/runs?token={tok}{q}", inp)["data"]
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"Apify {actor}: HTTP {e.code} {e.read()[:300].decode('utf-8', 'replace')}")
     rid = run["id"]
@@ -142,7 +143,9 @@ def apify(actor, inp):
         run = http("GET", f"{base}/actor-runs/{rid}?token={tok}&waitForFinish=60", timeout=90)["data"]
         if run["status"] in ("SUCCEEDED", "FAILED", "ABORTED", "TIMED-OUT"):
             break
-    if run["status"] != "SUCCEEDED":
+    if run["status"] == "TIMED-OUT":
+        log(f"Apify {actor}: не уложился во время — беру то, что успел собрать")
+    elif run["status"] != "SUCCEEDED":
         raise RuntimeError(f"запуск завершился со статусом {run['status']}")
     items = http("GET", f"{base}/datasets/{run['defaultDatasetId']}/items?token={tok}&clean=true&format=json")
     log(f"Apify {actor}: {len(items)} записей")
@@ -293,7 +296,8 @@ def collect_vk():
 def collect_vk_search(codes):
     """Поиск клипов VK по кодам WW (Apify maximedupre/vk-clips, режим keywords)."""
     import re
-    items = apify("maximedupre~vk-clips", {"discoveryMethod": "keywords", "keywords": codes, "maxItems": 300})
+    items = apify("maximedupre~vk-clips", {"discoveryMethod": "keywords", "keywords": codes, "maxItems": 120},
+                  timeout_s=900)
     out, wanted = [], {c.upper() for c in codes}
     for x in items:
         url = x.get("clipUrl") or x.get("url") or ""
