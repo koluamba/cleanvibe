@@ -285,7 +285,12 @@ def collect_vk():
 def collect_vk_clips(links):
     """Просмотры и описание конкретных клипов по ссылкам — через Apify."""
     import re
-    items = apify("automation-lab~vk-clips-scraper", {"mode": "clips", "clipUrls": links, "maxItems": len(links)})
+    norm = []
+    for u in links:
+        m = re.search(r"(clip|video)(-?\d+_\d+)", u)
+        if m:
+            norm.append({"url": f"https://vk.com/{m.group(1)}{m.group(2)}"})
+    items = apify("automation-lab~vk-clips-scraper", {"mode": "clips", "clipUrls": norm, "maxItems": len(norm)})
     out = []
     for x in items:
         url = x.get("clipUrl") or x.get("url") or ""
@@ -336,8 +341,10 @@ def collect_vk_api(owners, tok):
 def collect_vk_apify(owners):
     """Без токена VK — через Apify (тот же APIFY_TOKEN)."""
     names = [vk_owner(x)[0] for x in owners]
+    # VK отдаёт видео профилей только российским IP — нужен резидентный прокси Apify (RU)
     items = apify("trev0n~vk-video-profile-scraper", {
         "screenNames": names, "includeRecentVideos": True, "maxVideos": 100,
+        "proxyConfiguration": {"useApifyProxy": True, "apifyProxyGroups": ["RESIDENTIAL"], "apifyProxyCountry": "RU"},
     })
     out = []
     # диагностика: что вернул скрейпер (без лишних данных), чтобы понять, если ролики не находятся
