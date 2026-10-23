@@ -377,16 +377,22 @@ function render(){
   const extraOrd = sum(withCard.map(r => r.cardT.orders - r.base.orders * nDays));
   const sgn = v => (v >= 0 ? '+' : '−');
   const pre = D.demo ? '' : '≈ ';
+  // подпись базы: «8–21 окт.»
+  const bd = (M.find(r => r.base) || {}).base, st = D.startDate ? new Date(D.startDate) : null;
+  const fmtD = x => x.toLocaleDateString('ru-RU', {day:'numeric', month:'short'});
+  const baseLbl = bd && st ? (() => { const a = new Date(st); a.setDate(a.getDate() - bd.days); const b = new Date(st); b.setDate(b.getDate() - 1); return fmtD(a) + ' – ' + fmtD(b); })() : '14 дней до старта';
+  const explain = `Все заказы карточек в день — органика, реклама WB и подменные артикулы вместе — в сравнении со средним днём до старта (${baseLbl}). Новая выручка — сколько карточки заработали сверх этого уровня за период.`;
   const kpi = `
     <div class="card kpi-o"><div class="label">Продажи по подменным</div>
       <div class="mid num">${pre}${rub(T.revenue)}</div><div class="small num">${fmt(T.orders)} шт · прямые</div></div>
-    <div class="card"><div class="label">С учётом коэф.</div>
-      <div class="mid num">${pre}${rub(T.kr)}</div><div class="small num">≈ ${fmt(T.ko)} шт · ×${(M[0] && M[0].coef || D.coef || 1.9).toLocaleString('ru-RU')}</div></div>
     <div class="card"><div class="label">Переходы по подменным</div>
       <div class="mid num">${fmt(T.clicks)}</div><div class="small num">конверсия ${T.clicks ? (T.orders/T.clicks*100).toFixed(1) : '0'}%</div></div>
-    <div class="card"><div class="label">Прирост карточек</div>
+    <div class="card" style="grid-column:1/-1"><div class="label">Продажи с учётом коэф.</div>
+      <div class="mid num">${pre}${rub(T.kr)}</div><div class="small num">≈ ${fmt(T.ko)} шт · ×${(M[0] && M[0].coef || D.coef || 1.9).toLocaleString('ru-RU')}</div></div>
+    <div class="card" style="grid-column:1/-1"><div class="label">Прирост карточек</div>
       <div class="mid num">${growth == null ? '—' : (growth >= 0 ? '+' : '−') + Math.abs(growth).toFixed(0) + '%'}</div>
-      <div class="small num">${growth == null ? 'нужна база до старта' : `<b style="color:var(--ink)">${sgn(extraRub)}${short(Math.abs(extraRub))} ₽</b> новой выручки<br>${sgn(extraOrd)}${fmt(Math.abs(extraOrd))} шт · заказы в день ${fmt(baseAvg)} → ${fmt(cardAvg)}`}</div></div>`;
+      <div class="small num">${growth == null ? 'нужна база до старта' : `<b style="color:var(--ink)">${sgn(extraRub)}${short(Math.abs(extraRub))} ₽</b> новой выручки<br>${sgn(extraOrd)}${fmt(Math.abs(extraOrd))} шт · заказы в день ${fmt(baseAvg)} → ${fmt(cardAvg)}`}</div>
+      <div class="small" style="margin-top:8px;line-height:1.4;font-weight:500">${explain}</div></div>`;
   $('kpiO').innerHTML = $('kpiS').innerHTML = kpi;
 
   const key = r => skuSort === 'views' ? r.views : r[skuSort];
@@ -413,6 +419,7 @@ function render(){
   $('skuList').innerHTML = rows.map(r => {
     const b = r.base, c = r.cardT, a = r.adsT;
     const cardBlk = c ? `<div class="blk"><div class="blk-h">Вся карточка WB <i>${esc((r.cardNames||[]).map(x => x.replace(/^cleanvibe-/i,'')).join(', '))}</i></div>
+      <div class="small" style="margin:-2px 2px 8px;line-height:1.35">Весь трафик карточки, а не только подменные. «% к базе» — средний день периода против среднего дня до старта (${baseLbl}).</div>
       <div class="stats">
         <div class="stat"><b class="num">${short(c.clicks)}</b><span>переходы</span>${b ? dl(pct(c.clicks/nDays, b.clicks)) : ''}</div>
         <div class="stat"><b class="num">${fmt(c.orders)}</b><span>заказы, шт</span>${b ? dl(pct(c.orders/nDays, b.orders)) : ''}</div>
