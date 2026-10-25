@@ -61,7 +61,7 @@ def fail(where, e):
     log("⚠️ ", msg)
 
 
-def http(method, url, body=None, headers=None, timeout=120, retries=3):
+def http(method, url, body=None, headers=None, timeout=120, retries=6):
     data = json.dumps(body).encode() if body is not None else None
     h = {"Content-Type": "application/json"} if body is not None else {}
     h.update(headers or {})
@@ -75,7 +75,7 @@ def http(method, url, body=None, headers=None, timeout=120, retries=3):
             if e.code != 429 or attempt == retries:
                 raise
             wait = int(e.headers.get("X-RateLimit-Retry") or e.headers.get("Retry-After") or 60)
-            if wait > 1500:                      # очень долгая блокировка — докачаем в следующий запуск
+            if wait > 3600:                      # очень долгая блокировка — докачаем в следующий запуск
                 raise
             log(f"429: жду {wait} сек и повторяю")
             time.sleep(wait + 2)
