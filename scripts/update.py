@@ -61,7 +61,7 @@ def fail(where, e):
     log("⚠️ ", msg)
 
 
-def http(method, url, body=None, headers=None, timeout=120, retries=6):
+def http(method, url, body=None, headers=None, timeout=120, retries=2):
     data = json.dumps(body).encode() if body is not None else None
     h = {"Content-Type": "application/json"} if body is not None else {}
     h.update(headers or {})
@@ -75,7 +75,7 @@ def http(method, url, body=None, headers=None, timeout=120, retries=6):
             if e.code != 429 or attempt == retries:
                 raise
             wait = int(e.headers.get("X-RateLimit-Retry") or e.headers.get("Retry-After") or 60)
-            if wait > 3600:                      # очень долгая блокировка — докачаем в следующий запуск
+            if wait > 90:                        # долгая блокировка — не ждём, возьмём в следующий запуск
                 raise
             log(f"429: жду {wait} сек и повторяю")
             time.sleep(wait + 2)
@@ -435,14 +435,14 @@ def wb_funnel_day_range(start, end):
         time.sleep(WB_PAUSE)
 
 
-def wb_subs_day(day, nm_ids):
+def wb_subs_day(day, nm_ids, end=None):
     """Статистика по подменным артикулам: прямые запросы вида «ww1262654» в поиске WB."""
     tok = os.environ["WB_TOKEN"]
     url = "https://seller-analytics-api.wildberries.ru/api/v2/search-report/product/search-texts"
     LIMIT = 30                       # WB отдаёт максимум 30 строк на запрос
 
     def ask(chunk):
-        j = http("POST", url, {"currentPeriod": {"start": day, "end": day}, "nmIds": chunk,
+        j = http("POST", url, {"currentPeriod": {"start": day, "end": end or day}, "nmIds": chunk,
                                "topOrderBy": "openCard", "orderBy": {"field": "openCard", "mode": "desc"},
                                "limit": LIMIT, "includeSubstitutedSKUs": True, "includeSearchTexts": False},
                  {"Authorization": tok})
@@ -491,11 +491,6 @@ def collect_wb(raw):
     only = {int(x) for x in CFG.get("nmIds") or []}
     mapped = {int(n) for c in (CFG.get("products") or []) for n in (c.get("nmIds") or [])}
 
-    # дни после старта: воронка + подменные артикулы (свежие — первыми)
-    days = day_list(START, SNAP) if SNAP >= START else []
-    # каждый запуск перезапрашиваем ВЕСЬ период с даты старта: WB досчитывает поздние
-    # переходы/заказы и записывает выкупы/отмены задним числом на день заказа
-    todo = sorted(days, reverse=True)[:WB_BACKFILL_MAX]
     calls = 0
 
     def pause():
@@ -504,76 +499,75 @@ def collect_wb(raw):
             time.sleep(WB_PAUSE)
         calls += 1
 
-    # база до старта — ОДНИМ запросом за весь период (WB строго лимитирует запросы)
+    def brand_ok(p):
+        if p["nmId"] in mapped:
+            return True
+        if brand and (p.get("brandName") or "").lower() != brand:
+            return False
+        return not only or p["nmId"] in only
+
+    # 1) база до старта — один раз
     base_key = f"{BASE_START}..{START - dt.timedelta(days=1)}"
     if (raw.get("baseAgg") or {}).get("period") != base_key:
         pause()
         try:
-            items = wb_funnel_day_range(str(BASE_START), str(START - dt.timedelta(days=1)))
             agg = {}
-            for it in items:
+            for it in wb_funnel_day_range(str(BASE_START), str(START - dt.timedelta(days=1))):
                 p = it["product"]
-                if p["nmId"] not in mapped and brand and (p.get("brandName") or "").lower() != brand:
-                    continue
-                st = it["statistic"]["selected"]
-                agg[str(p["nmId"])] = [st.get("openCount", 0), st.get("cartCount", 0),
-                                       st.get("orderCount", 0), st.get("orderSum", 0)]
+                if brand_ok(p):
+                    st = it["statistic"]["selected"]
+                    agg[str(p["nmId"])] = [st.get("openCount", 0), st.get("cartCount", 0),
+                                           st.get("orderCount", 0), st.get("orderSum", 0)]
             raw["baseAgg"] = {"period": base_key, "days": BASE_DAYS, "nm": agg}
             log(f"WB база {base_key}: {len(agg)} карточек")
         except urllib.error.HTTPError as e:
-            fail("WB база", f"HTTP {e.code}")
-            if e.code == 429:
-                return
+            fail("WB база", f"HTTP {e.code} — лимит токена, возьму в следующий запуск")
 
-    for day in todo:
-        pause()
-        try:
-            items = wb_funnel_day(day)
-        except urllib.error.HTTPError as e:
-            fail("WB", f"{day}: HTTP {e.code} {e.read()[:200]!r}")
-            if e.code == 429:
-                break                      # лимит — докачаем в следующий запуск
-            continue
+    if SNAP < START:
+        return
+    start, end = str(START), str(SNAP)
+    cum_f = raw.setdefault("cumFunnel", {})
+    cum_s = raw.setdefault("cumSubs", {})
+
+    # 2) все заказы/переходы карточек — ОДИН запрос за весь период с даты старта
+    pause()
+    try:
         row = {}
-        for it in items:
+        for it in wb_funnel_day_range(start, end):
             p = it["product"]
-            if p["nmId"] not in mapped:
-                if brand and (p.get("brandName") or "").lower() != brand:
-                    continue
-                if only and p["nmId"] not in only:
-                    continue
+            if not brand_ok(p):
+                continue
             st = it["statistic"]["selected"]
             row[str(p["nmId"])] = [st.get("openCount", 0), st.get("cartCount", 0),
                                    st.get("orderCount", 0), st.get("orderSum", 0)]
             products[str(p["nmId"])] = {"title": p.get("title", ""), "vendorCode": p.get("vendorCode", ""),
                                         "avgPrice": st.get("avgPrice") or products.get(str(p["nmId"]), {}).get("avgPrice", 0)}
-        funnel[day] = row
-        log(f"WB {day}: {len(row)} карточек")
+        cum_f[end] = row
+        log(f"WB карточки {start}…{end}: {len(row)}")
+    except urllib.error.HTTPError as e:
+        fail("WB карточки", f"HTTP {e.code} — лимит токена, возьму в следующий запуск")
 
-        # подменные артикулы: переходы, корзины, заказы по каждому коду WW
-        pause()
-        try:
-            items = wb_subs_day(day, sorted(int(n) for n in products))
-        except urllib.error.HTTPError as e:
-            fail("WB подменные", f"{day}: HTTP {e.code} {e.read()[:200]!r}")
-            if e.code == 429:
-                break
-            continue
+    # 3) подменные артикулы — ОДИН запрос за весь период с даты старта
+    pause()
+    try:
+        last_f = cum_f[max(cum_f)] if cum_f else {}
         srow = {}
-        for it in items:
+        for it in wb_subs_day(start, sorted(int(n) for n in products), end=end):
             m = CODE_RE.search(it.get("text") or "")
             if not m:
                 continue
             code, nm = "WW" + m.group(1), str(it.get("nmId"))
             o, c, n = cur(it.get("openCard")), cur(it.get("addToCart")), cur(it.get("orders"))
-            f = funnel[day].get(nm)
+            f = last_f.get(nm)
             price = (f[3] / f[2]) if f and f[2] else products.get(nm, {}).get("avgPrice", 0)
             a = srow.setdefault(code, [0, 0, 0, 0])
             a[0] += o; a[1] += c; a[2] += n; a[3] += round(n * (price or 0))
             if nm not in code_nm.setdefault(code, []):
-                code_nm[code].append(nm)          # на какую карточку ведёт код — WB сообщает сам
-        subs[day] = srow
-        log(f"WB {day}: подменных кодов с активностью — {len(srow)}")
+                code_nm[code].append(nm)
+        cum_s[end] = srow
+        log(f"WB подменные {start}…{end}: кодов с активностью — {len(srow)}")
+    except urllib.error.HTTPError as e:
+        fail("WB подменные", f"HTTP {e.code} — лимит токена, возьму в следующий запуск")
 
 
 def collect_ads(raw):
@@ -667,15 +661,29 @@ def build(raw):
 
     funnel = raw.get("funnel", {})
 
+    def derive(legacy, cums, keys):
+        """Дневные значения из накопительных итогов «с даты старта по вчера».
+        Итог за весь период всегда точный; по дням — разница между запусками."""
+        keys = [str(k) for k in keys]
+        tot = lambda row: [sum((row.get(k) or [0, 0, 0, 0])[i] for k in keys) for i in range(4)]
+        out = {s: [0, 0, 0, 0] for s in dates}
+        snaps = sorted(s for s in cums if s >= dates[0])
+        first = snaps[0] if snaps else None
+        for s, row in legacy.items():
+            if s in out and (first is None or s < first):
+                out[s] = [a + b for a, b in zip(out[s], tot(row))]
+        prev = None
+        for s in snaps:
+            curv = tot(cums[s])
+            if prev is None:
+                prev = [sum(out[x][i] for x in out if x < s) for i in range(4)]
+            at = s if s in out else dates[-1]
+            out[at] = [a + c - p for a, c, p in zip(out[at], curv, prev)]
+            prev = curv
+        return [{"clicks": out[s][0], "carts": out[s][1], "orders": out[s][2], "revenue": out[s][3]} for s in dates]
+
     def wb_daily(nms):
-        out = []
-        for s in dates:
-            o = c = n = rub = 0
-            for nm in nms:
-                a, b, e, f = funnel.get(s, {}).get(str(nm)) or [0, 0, 0, 0]
-                o, c, n, rub = o + a, c + b, n + e, rub + f
-            out.append({"orders": n, "revenue": rub, "clicks": o, "carts": c})
-        return out
+        return derive(funnel, raw.get("cumFunnel", {}), nms)
 
     # все карточки бренда на WB
     cards = []
@@ -694,14 +702,7 @@ def build(raw):
     subs = raw.get("subs", {})
 
     def subs_daily(codes):
-        out = []
-        for s in dates:
-            o = c = n = rub = 0
-            for code in codes:
-                a, b, e, f = subs.get(s, {}).get(code) or [0, 0, 0, 0]
-                o, c, n, rub = o + a, c + b, n + e, rub + f
-            out.append({"orders": n, "revenue": rub, "clicks": o, "carts": c})
-        return out
+        return derive(subs, raw.get("cumSubs", {}), codes)
 
     ads = raw.get("ads", {})
     code_nm = raw.get("codeNm", {})
