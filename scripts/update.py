@@ -75,7 +75,7 @@ def http(method, url, body=None, headers=None, timeout=120, retries=2):
             if e.code != 429 or attempt == retries:
                 raise
             wait = int(e.headers.get("X-RateLimit-Retry") or e.headers.get("Retry-After") or 60)
-            if wait > 90:                        # долгая блокировка — не ждём, возьмём в следующий запуск
+            if wait > 30:                        # блокировка — не ждём и не долбим WB повторами (это продлевает лимит)
                 raise
             log(f"429: жду {wait} сек и повторяю")
             time.sleep(wait + 2)
