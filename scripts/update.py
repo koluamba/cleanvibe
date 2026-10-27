@@ -545,7 +545,15 @@ def collect_wb(raw):
     if BASE_JUST_FETCHED:
         gap()
     got_subs = False
+    # «Базовый» токен: этот метод WB — 1 запрос в ЧАС, и неудачная попытка тоже сжигает час.
+    # Поэтому не пробуем, если с прошлой попытки прошло меньше 61 минуты.
+    now = dt.datetime.now(dt.timezone.utc)
+    last_try = raw.get("subsLastTry")
+    since = (now - dt.datetime.fromisoformat(last_try)).total_seconds() / 60 if last_try else 999
     try:
+        if since < 61 and not os.environ.get("WB_FAST"):
+            raise RuntimeError(f"прошло {since:.0f} мин с прошлой попытки — WB разрешает 1 запрос в час, пробую в следующий запуск")
+        raw["subsLastTry"] = now.isoformat()
         last_f = cum_f[max(cum_f)] if cum_f else {}
         srow, rows_nm = {}, []
         for it in wb_subs_day(start, sorted(int(n) for n in products), end=end):
@@ -568,7 +576,9 @@ def collect_wb(raw):
         got_subs = True
         log(f"WB подменные {start}…{end}: кодов с активностью — {len(srow)}")
     except urllib.error.HTTPError as e:
-        fail("WB подменные", f"HTTP {e.code} — лимит токена WB")
+        fail("WB подменные", f"HTTP {e.code} — лимит токена WB (1 запрос в час), следующая попытка не раньше чем через час")
+    except RuntimeError as e:
+        fail("WB подменные", e)
 
     # 3) все заказы/переходы карточек — ОДИН запрос за весь период (после паузы лимита)
     if got_subs:
