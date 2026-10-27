@@ -36,6 +36,8 @@ WB_PAUSE = 21                                      # пауза между за�
 
 ERRORS = []
 VK_DEBUG = []
+LAST_HEADERS = {}
+BASE_JUST_FETCHED = []
 
 # секреты: убираем случайные пробелы/переносы строк, которые попадают при копировании
 SECRETS = []
@@ -69,6 +71,8 @@ def http(method, url, body=None, headers=None, timeout=120, retries=2):
         req = urllib.request.Request(url, data=data, headers=h, method=method)
         try:
             with urllib.request.urlopen(req, timeout=timeout) as r:
+                LAST_HEADERS.clear()
+                LAST_HEADERS.update({k.lower(): v for k, v in r.headers.items()})
                 txt = r.read().decode()
                 return json.loads(txt) if txt else None
         except urllib.error.HTTPError as e:
@@ -506,10 +510,17 @@ def collect_wb(raw):
             return False
         return not only or p["nmId"] in only
 
-    # 1) база до старта — один раз
+    def gap():
+        """У «Базового» токена вся аналитика WB — 1 запрос на ~20 мин (общий лимит).
+        Ждём ровно столько, сколько WB сказал в заголовке, иначе следующий запрос получит 429."""
+        lim, reset = LAST_HEADERS.get("x-ratelimit-limit"), LAST_HEADERS.get("x-ratelimit-reset")
+        wait = int(reset) + 5 if lim == "1" and reset and reset.isdigit() else WB_PAUSE
+        log(f"WB: пауза {wait} сек до следующего запроса (лимит токена)")
+        time.sleep(min(wait, 1500))
+
+    # 1) база до старта — один раз (уже скачана; при смене даты старта скачается заново)
     base_key = f"{BASE_START}..{START - dt.timedelta(days=1)}"
     if (raw.get("baseAgg") or {}).get("period") != base_key:
-        pause()
         try:
             agg = {}
             for it in wb_funnel_day_range(str(BASE_START), str(START - dt.timedelta(days=1))):
@@ -520,6 +531,7 @@ def collect_wb(raw):
                                            st.get("orderCount", 0), st.get("orderSum", 0)]
             raw["baseAgg"] = {"period": base_key, "days": BASE_DAYS, "nm": agg}
             log(f"WB база {base_key}: {len(agg)} карточек")
+            BASE_JUST_FETCHED.append(1)
         except urllib.error.HTTPError as e:
             fail("WB база", f"HTTP {e.code} — лимит токена, возьму в следующий запуск")
 
@@ -529,8 +541,38 @@ def collect_wb(raw):
     cum_f = raw.setdefault("cumFunnel", {})
     cum_s = raw.setdefault("cumSubs", {})
 
-    # 2) все заказы/переходы карточек — ОДИН запрос за весь период с даты старта
-    pause()
+    # 2) ПОДМЕННЫЕ АРТИКУЛЫ — первыми, ОДИН запрос за весь период с даты старта
+    if BASE_JUST_FETCHED:
+        gap()
+    got_subs = False
+    try:
+        last_f = cum_f[max(cum_f)] if cum_f else {}
+        srow, rows_nm = {}, []
+        for it in wb_subs_day(start, sorted(int(n) for n in products), end=end):
+            m = CODE_RE.search(it.get("text") or "")
+            if not m:
+                continue
+            code, nm = "WW" + m.group(1), str(it.get("nmId"))
+            o, c, n = cur(it.get("openCard")), cur(it.get("addToCart")), cur(it.get("orders"))
+            a_ = srow.setdefault(code, [0, 0, 0, 0])
+            a_[0] += o; a_[1] += c; a_[2] += n
+            rows_nm.append((code, nm, n))
+            if nm not in code_nm.setdefault(code, []):
+                code_nm[code].append(nm)
+        # рубли: заказы × средняя цена карточки (по последним данным воронки)
+        for code, nm, n in rows_nm:
+            f = last_f.get(nm)
+            price = (f[3] / f[2]) if f and f[2] else products.get(nm, {}).get("avgPrice", 0)
+            srow[code][3] += round(n * (price or 0))
+        cum_s[end] = srow
+        got_subs = True
+        log(f"WB подменные {start}…{end}: кодов с активностью — {len(srow)}")
+    except urllib.error.HTTPError as e:
+        fail("WB подменные", f"HTTP {e.code} — лимит токена WB")
+
+    # 3) все заказы/переходы карточек — ОДИН запрос за весь период (после паузы лимита)
+    if got_subs:
+        gap()
     try:
         row = {}
         for it in wb_funnel_day_range(start, end):
@@ -544,30 +586,16 @@ def collect_wb(raw):
                                         "avgPrice": st.get("avgPrice") or products.get(str(p["nmId"]), {}).get("avgPrice", 0)}
         cum_f[end] = row
         log(f"WB карточки {start}…{end}: {len(row)}")
+        # пересчёт рублей по подменным с ценами этого же периода
+        if got_subs:
+            srow2 = {k: [v[0], v[1], v[2], 0] for k, v in cum_s[end].items()}
+            for code, nm, n in rows_nm:
+                f = row.get(nm)
+                price = (f[3] / f[2]) if f and f[2] else products.get(nm, {}).get("avgPrice", 0)
+                srow2[code][3] += round(n * (price or 0))
+            cum_s[end] = srow2
     except urllib.error.HTTPError as e:
-        fail("WB карточки", f"HTTP {e.code} — лимит токена, возьму в следующий запуск")
-
-    # 3) подменные артикулы — ОДИН запрос за весь период с даты старта
-    pause()
-    try:
-        last_f = cum_f[max(cum_f)] if cum_f else {}
-        srow = {}
-        for it in wb_subs_day(start, sorted(int(n) for n in products), end=end):
-            m = CODE_RE.search(it.get("text") or "")
-            if not m:
-                continue
-            code, nm = "WW" + m.group(1), str(it.get("nmId"))
-            o, c, n = cur(it.get("openCard")), cur(it.get("addToCart")), cur(it.get("orders"))
-            f = last_f.get(nm)
-            price = (f[3] / f[2]) if f and f[2] else products.get(nm, {}).get("avgPrice", 0)
-            a = srow.setdefault(code, [0, 0, 0, 0])
-            a[0] += o; a[1] += c; a[2] += n; a[3] += round(n * (price or 0))
-            if nm not in code_nm.setdefault(code, []):
-                code_nm[code].append(nm)
-        cum_s[end] = srow
-        log(f"WB подменные {start}…{end}: кодов с активностью — {len(srow)}")
-    except urllib.error.HTTPError as e:
-        fail("WB подменные", f"HTTP {e.code} — лимит токена, возьму в следующий запуск")
+        fail("WB карточки", f"HTTP {e.code} — лимит токена WB")
 
 
 def collect_ads(raw):
