@@ -556,7 +556,19 @@ def collect_wb(raw):
         raw["subsLastTry"] = now.isoformat()
         last_f = cum_f[max(cum_f)] if cum_f else {}
         srow, rows_nm = {}, []
-        for it in wb_subs_day(start, sorted(int(n) for n in products), end=end):
+        nm_list = sorted(int(n) for n in products)
+        try:
+            items = wb_subs_day(start, nm_list, end=end)
+        except urllib.error.HTTPError as e:
+            # окно лимита занято (возможно, другим сервисом в кабинете) — ждём, когда WB его откроет, и пробуем ровно один раз
+            wait = int(e.headers.get("X-RateLimit-Retry") or 0) if e.code == 429 else 0
+            if not (0 < wait <= 3700):
+                raise
+            log(f"WB подменные: окно лимита занято, жду {wait} сек и забираю")
+            time.sleep(wait + 3)
+            raw["subsLastTry"] = dt.datetime.now(dt.timezone.utc).isoformat()
+            items = wb_subs_day(start, nm_list, end=end)
+        for it in items:
             m = CODE_RE.search(it.get("text") or "")
             if not m:
                 continue
