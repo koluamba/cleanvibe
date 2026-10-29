@@ -2,7 +2,9 @@ name: Обновление данных
 
 on:
   schedule:
-    - cron: "0 2 * * *"        # каждый день в 05:00 МСК / 10:00 по Макассару
+    # не ровное время: GitHub часто откладывает или пропускает запуски «на :00»
+    - cron: "23 1 * * *"       # 09:23 по Макассару / 04:23 МСК — основной
+    - cron: "47 4 * * *"       # 12:47 по Макассару — запасной, сработает, только если основной не собрал данные
   workflow_dispatch:            # кнопка «Run workflow» для ручного запуска
   push:
     branches: [main]
@@ -20,7 +22,7 @@ concurrency:
 jobs:
   update:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 100
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
