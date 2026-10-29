@@ -443,21 +443,15 @@ def wb_subs_day(day, nm_ids, end=None):
     """Статистика по подменным артикулам: прямые запросы вида «ww1262654» в поиске WB."""
     tok = os.environ["WB_TOKEN"]
     url = "https://seller-analytics-api.wildberries.ru/api/v2/search-report/product/search-texts"
-    LIMIT = 30                       # WB отдаёт максимум 30 строк на запрос
-
+    # WB отдаёт до 30 строк НА КАЖДУЮ карточку (не на весь ответ), поэтому один запрос
+    # на все карточки возвращает всё. Никаких дополнительных запросов: у «Базового»
+    # токена этот метод — 1 запрос в час, и любой второй запрос получит отказ.
     def ask(chunk):
         j = http("POST", url, {"currentPeriod": {"start": day, "end": end or day}, "nmIds": chunk,
                                "topOrderBy": "openCard", "orderBy": {"field": "openCard", "mode": "desc"},
-                               "limit": LIMIT, "includeSubstitutedSKUs": True, "includeSearchTexts": False},
+                               "limit": 30, "includeSubstitutedSKUs": True, "includeSearchTexts": False},
                  {"Authorization": tok})
-        items = ((j or {}).get("data") or {}).get("items") or []
-        if len(items) >= LIMIT and len(chunk) > 1:   # упёрлись в лимит — делим карточки пополам, чтобы ничего не потерять
-            half = len(chunk) // 2
-            time.sleep(WB_PAUSE)
-            a = ask(chunk[:half])
-            time.sleep(WB_PAUSE)
-            return a + ask(chunk[half:])
-        return items
+        return ((j or {}).get("data") or {}).get("items") or []
 
     out = []
     for i in range(0, len(nm_ids), 50):
@@ -562,8 +556,12 @@ def collect_wb(raw):
         except urllib.error.HTTPError as e:
             # окно лимита занято (возможно, другим сервисом в кабинете) — ждём, когда WB его откроет, и пробуем ровно один раз
             wait = int(e.headers.get("X-RateLimit-Retry") or 0) if e.code == 429 else 0
+            raw.setdefault("wbLimitLog", []).append({"at": dt.datetime.now(dt.timezone.utc).isoformat(timespec="seconds"),
+                                                     "code": e.code, "retry_sec": wait,
+                                                     "limit": e.headers.get("X-RateLimit-Limit")})
+            raw["wbLimitLog"] = raw["wbLimitLog"][-30:]
             if not (0 < wait <= 3700):
-                raise
+                raise RuntimeError(f"WB заблокировал на {wait} сек (~{wait // 60} мин) — блокировка дольше часа, жду следующий запуск")
             log(f"WB подменные: окно лимита занято, жду {wait} сек и забираю")
             time.sleep(wait + 3)
             raw["subsLastTry"] = dt.datetime.now(dt.timezone.utc).isoformat()
@@ -831,6 +829,10 @@ def main():
         except Exception as e:
             fail("data.json", e)
     vids = raw.setdefault("videos", {})
+    # запасной запуск по расписанию ничего не делает, если сегодня уже всё собрано
+    if os.environ.get("GITHUB_EVENT_NAME") == "schedule" and raw.get("lastOk") == str(TODAY):
+        log("Сегодня данные уже собраны — запасной запуск пропускаю")
+        return
 
     for name, fn in [("Instagram", collect_instagram), ("TikTok", collect_tiktok),
                      ("YouTube", collect_youtube), ("VK", collect_vk)]:
@@ -854,6 +856,8 @@ def main():
     except Exception as e:
         fail("Реклама WB", e)
 
+    if str(SNAP) in raw.get("cumSubs", {}) and str(SNAP) in raw.get("cumFunnel", {}):
+        raw["lastOk"] = str(TODAY)
     out = build(raw)
     with open(DATA_PATH, "w", encoding="utf-8") as f:
         json.dump(out, f, ensure_ascii=False, separators=(",", ":"))
