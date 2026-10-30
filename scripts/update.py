@@ -549,7 +549,7 @@ def collect_wb(raw):
             raise RuntimeError(f"прошло {since:.0f} мин с прошлой попытки — WB разрешает 1 запрос в час, пробую в следующий запуск")
         raw["subsLastTry"] = now.isoformat()
         last_f = cum_f[max(cum_f)] if cum_f else {}
-        srow, rows_nm = {}, []
+        srow, rows_nm, clicks_nm = {}, [], {}
         nm_list = sorted(int(n) for n in products)
         try:
             items = wb_subs_day(start, nm_list, end=end)
@@ -577,12 +577,14 @@ def collect_wb(raw):
             rows_nm.append((code, nm, n))
             if nm not in code_nm.setdefault(code, []):
                 code_nm[code].append(nm)
+            clicks_nm.setdefault(code, {})[nm] = clicks_nm.get(code, {}).get(nm, 0) + o
         # рубли: заказы × средняя цена карточки (по последним данным воронки)
         for code, nm, n in rows_nm:
             f = last_f.get(nm)
             price = (f[3] / f[2]) if f and f[2] else products.get(nm, {}).get("avgPrice", 0)
             srow[code][3] += round(n * (price or 0))
         cum_s[end] = srow
+        raw["codeNmClicks"] = clicks_nm        # переходы по коду в разрезе карточек — для привязки кода к «своей» карточке
         got_subs = True
         log(f"WB подменные {start}…{end}: кодов с активностью — {len(srow)}")
     except urllib.error.HTTPError as e:
@@ -788,12 +790,27 @@ def build(raw):
                 "adOrders": sum(x["orders"] for x in ad) / ka if ka else None,
                 "adClicks": sum(x["clicks"] for x in ad) / ka if ka else None}
 
+    code_clicks = raw.get("codeNmClicks") or {}
+
+    def main_cards(codes):
+        """Карточка кода — та, куда ведёт основная часть переходов по нему (≥30% или лидер).
+        По коду в поиске WB показывает и соседние товары; их не считаем «своей» карточкой."""
+        out = set()
+        for c in codes:
+            by = code_clicks.get(c) or {}
+            total = sum(by.values())
+            if not total:
+                continue
+            top = max(by, key=by.get)
+            out.add(top)
+            out.update(nm for nm, v in by.items() if v >= 0.3 * total)
+        return sorted(out)
+
     skus, known = [], set()
     for prod in CFG.get("products") or []:
         codes = [x.upper().replace(" ", "") for x in prod.get("codes") or []]
         known.update(codes)
-        nms = [str(n) for n in prod.get("nmIds") or []] or \
-              sorted({nm for c in codes for nm in code_nm.get(c, [])})
+        nms = [str(n) for n in prod.get("nmIds") or []] or main_cards(codes)
         skus.append(dict(sku=prod["name"], name=prod["name"], codes=codes, daily=subs_daily(codes),
                          byCodeWB={c: subs_daily([c]) for c in codes},
                          coef=float(prod.get("coef", coef_all)),
