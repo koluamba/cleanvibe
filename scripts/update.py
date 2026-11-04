@@ -184,24 +184,57 @@ def collect_instagram():
     return out
 
 
-def collect_tiktok():
-    users = [a["tiktok"] for a in CFG["accounts"] if a.get("tiktok")]
-    if not users:
-        return []
-    items = apify("clockworks~tiktok-scraper", {
-        "profiles": users,
-        "resultsPerPage": 100,
-        "oldestPostDate": CFG["startDate"],
-        "profileSorting": "latest",
+TT_DEBUG = []
+KNOWN_VIDS = {}          # заполняется в main(): ролики из прошлых сборов
+
+
+def _tt_items(inp):
+    items = apify("clockworks~tiktok-scraper", dict({
         "shouldDownloadVideos": False,
         "shouldDownloadCovers": False,
         "shouldDownloadSubtitles": False,
         "shouldDownloadSlideshowImages": False,
-    })
-    out = []
-    for x in items:
-        if x.get("errorCode") or x.get("playCount") is None:
+    }, **inp))
+    good = [x for x in items if not x.get("errorCode") and x.get("playCount") is not None]
+    bad = [{k: x.get(k) for k in ("errorCode", "error", "url", "input") if x.get(k)} for x in items
+           if x.get("errorCode") or x.get("playCount") is None][:3]
+    return good, len(items), bad
+
+
+def collect_tiktok():
+    users = [a["tiktok"] for a in CFG["accounts"] if a.get("tiktok")]
+    if not users:
+        return []
+    TT_DEBUG.clear()
+    got = []
+    # каждый профиль — отдельным запуском: один «капризный» профиль не ломает остальные
+    for u in users:
+        dbg = {"profile": u}
+        try:
+            good, n, bad = _tt_items({"profiles": [u], "resultsPerPage": 100,
+                                      "oldestPostDate": CFG["startDate"], "profileSorting": "latest"})
+            dbg.update(items=n, videos=len(good), errors=bad)
+        except Exception as e:
+            good = []
+            dbg["fail"] = str(e)[:200]
+        # профиль ничего не отдал — обновляем уже известные ролики по прямым ссылкам
+        if not good:
+            urls = [v["url"] for v in KNOWN_VIDS.values()
+                    if v.get("platform") == "tiktok" and v.get("account", "").lower() == u.lower() and v.get("url")]
+            if urls:
+                try:
+                    good, n, bad = _tt_items({"postURLs": urls, "resultsPerPage": len(urls)})
+                    dbg.update(fallbackUrls=len(urls), fallbackVideos=len(good), fallbackErrors=bad)
+                except Exception as e:
+                    dbg["fallbackFail"] = str(e)[:200]
+        TT_DEBUG.append(dbg)
+        log("TikTok", dbg)
+        got += good
+    out, seen = [], set()
+    for x in got:
+        if str(x.get("id")) in seen:
             continue
+        seen.add(str(x.get("id")))
         pub = d(x.get("createTimeISO") or x.get("createTime"))
         if pub and pub < START:
             continue
@@ -833,6 +866,7 @@ def build(raw):
         "adsAccess": raw.get("adsAccess"),
         "errors": ERRORS,
         "vkDebug": VK_DEBUG,
+        "ttDebug": TT_DEBUG,
         "raw": raw,
     }
 
@@ -846,6 +880,7 @@ def main():
         except Exception as e:
             fail("data.json", e)
     vids = raw.setdefault("videos", {})
+    KNOWN_VIDS.update(vids)
     # запасной запуск по расписанию ничего не делает, если сегодня уже всё собрано
     if os.environ.get("GITHUB_EVENT_NAME") == "schedule" and raw.get("lastOk") == str(TODAY):
         log("Сегодня данные уже собраны — запасной запуск пропускаю")
