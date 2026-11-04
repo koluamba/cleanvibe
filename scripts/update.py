@@ -15,6 +15,7 @@
 """
 import datetime as dt
 import json
+import re
 import os
 import sys
 import time
@@ -880,6 +881,14 @@ def main():
         except Exception as e:
             fail("data.json", e)
     vids = raw.setdefault("videos", {})
+    # переименованные аккаунты: старые записи переводим на новый ник
+    ren = {k.lower(): v for k, v in (CFG.get("renamedAccounts") or {}).items()}
+    for rec in vids.values():
+        new = ren.get((rec.get("account") or "").lower())
+        if new:
+            rec["account"] = new
+            if rec.get("url"):
+                rec["url"] = re.sub(r"@[^/]+", "@" + new, rec["url"], count=1) if "tiktok.com" in rec["url"] else rec["url"]
     KNOWN_VIDS.update(vids)
     # запасной запуск по расписанию ничего не делает, если сегодня уже всё собрано
     if os.environ.get("GITHUB_EVENT_NAME") == "schedule" and raw.get("lastOk") == str(TODAY):
