@@ -20,8 +20,8 @@
       "vk": "club240525947"
     },
     {
-      "name": "khimikat0202",
-      "tiktok": "khimikat0202",
+      "name": "uborka0202",
+      "tiktok": "uborka0202",
       "instagram": "uborkaa099",
       "youtube": "@usergaldisd",
       "vk": "club234059658"
@@ -116,5 +116,8 @@
   ],
   "vkClips": [
     "https://vk.ru/clip1118476923_456239036"
-  ]
+  ],
+  "renamedAccounts": {
+    "khimikat0202": "uborka0202"
+  }
 }
