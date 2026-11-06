@@ -3,6 +3,7 @@
   "brand": "CleanVibe",
   "coef": 1.9,
   "baselineDays": 14,
+  "ads": false,
   "nmIds": [],
   "accounts": [
     {
