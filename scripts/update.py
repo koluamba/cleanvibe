@@ -32,6 +32,12 @@ MSK = dt.timezone(dt.timedelta(hours=3))           # WB считает дни п
 TODAY = dt.datetime.now(MSK).date()
 SNAP = TODAY - dt.timedelta(days=1)                # данные «по вчерашний день»
 START = dt.date.fromisoformat(CFG["startDate"])
+# экономия Apify: каждый день — только свежие ролики, все ролики целиком — раз в неделю
+WINDOW_DAYS = int(CFG.get("dailyWindowDays", 14))
+FULL_EVERY = int(CFG.get("fullRefreshDays", 7))
+FULL = True                                     # решается в main()
+SINCE = START                                   # с какой даты брать ролики в этом запуске
+LIMIT = 300                                     # потолок роликов на профиль — защита от перерасхода
 WB_BACKFILL_MAX = 400                              # сколько дней WB перезапрашивать за один запуск
 WB_PAUSE = 21                                      # пауза между запросами к WB, сек (лимит 3 в минуту)
 
@@ -164,8 +170,8 @@ def collect_instagram():
     items = apify("apify~instagram-scraper", {
         "directUrls": [f"https://www.instagram.com/{u}/" for u in users],
         "resultsType": "posts",
-        "resultsLimit": 100,
-        "onlyPostsNewerThan": CFG["startDate"],
+        "resultsLimit": LIMIT,
+        "onlyPostsNewerThan": str(SINCE),
         "addParentData": False,
     })
     out = []
@@ -212,16 +218,17 @@ def collect_tiktok():
     for u in users:
         dbg = {"profile": u}
         try:
-            good, n, bad = _tt_items({"profiles": [u], "resultsPerPage": 100,
-                                      "oldestPostDate": CFG["startDate"], "profileSorting": "latest"})
+            good, n, bad = _tt_items({"profiles": [u], "resultsPerPage": LIMIT,
+                                      "oldestPostDate": str(SINCE), "profileSorting": "latest"})
             dbg.update(items=n, videos=len(good), errors=bad)
         except Exception as e:
             good = []
             dbg["fail"] = str(e)[:200]
-        # профиль ничего не отдал — обновляем уже известные ролики по прямым ссылкам
-        if not good:
+        # профиль не отдаётся (ошибка TikTok) — обновляем уже известные ролики по прямым ссылкам
+        if not good and (bad or "fail" in dbg):
             urls = [v["url"] for v in KNOWN_VIDS.values()
-                    if v.get("platform") == "tiktok" and v.get("account", "").lower() == u.lower() and v.get("url")]
+                    if v.get("platform") == "tiktok" and v.get("account", "").lower() == u.lower()
+                    and v.get("url") and (v.get("published") or "") >= str(SINCE)]
             if urls:
                 try:
                     good, n, bad = _tt_items({"postURLs": urls, "resultsPerPage": len(urls)})
@@ -713,6 +720,17 @@ def collect_ads(raw):
 
 
 # ───────────────────────── Сборка data.json ─────────────────────────
+def _round_keep_total(xs):
+    """Округляет дневные значения так, чтобы их сумма не изменилась."""
+    out, acc, prev = [], 0.0, 0
+    for x in xs:
+        acc += x
+        r = round(acc)
+        out.append(r - prev)
+        prev = r
+    return out
+
+
 def build(raw):
     last = max(SNAP, START)
     dates, x = [], START
@@ -725,6 +743,7 @@ def build(raw):
     for vid, v in raw.get("videos", {}).items():
         daily = [0] * len(dates)
         prev = None
+        prev_s = None
         for s in sorted(v["snap"]):
             views = v["snap"][s]
             if prev is None:
@@ -735,13 +754,22 @@ def build(raw):
                 inc = views
             else:
                 at, inc = s, max(0, views - prev)
+                # пропуск между замерами (ролик обновлялся не каждый день) — прирост
+                # распределяем поровну по дням пропуска, а не валим в один день
+                gap_days = [x for x in dates if prev_s < x <= s]
+                if len(gap_days) > 1:
+                    share = inc / len(gap_days)
+                    for x in gap_days:
+                        daily[idx[x]] += share
+                    inc = 0
             if at in idx:
                 daily[idx[at]] += inc
             prev = views
+            prev_s = s
         codes = v.get("codes") or []
         videos.append(dict(id=vid, platform=v["platform"], title=v["title"], url=v["url"],
                            account=v.get("account", ""), published=v["published"],
-                           codes=[c for c, _ in codes], daily=daily))
+                           codes=[c for c, _ in codes], daily=_round_keep_total(daily)))
 
     funnel = raw.get("funnel", {})
 
@@ -890,23 +918,37 @@ def main():
             if rec.get("url"):
                 rec["url"] = re.sub(r"@[^/]+", "@" + new, rec["url"], count=1) if "tiktok.com" in rec["url"] else rec["url"]
     KNOWN_VIDS.update(vids)
+    global FULL, SINCE
+    last_full = raw.get("lastFull")
+    FULL = (os.environ.get("FULL_REFRESH") == "1" or not last_full
+            or (TODAY - dt.date.fromisoformat(last_full)).days >= FULL_EVERY)
+    SINCE = START if FULL else max(START, TODAY - dt.timedelta(days=WINDOW_DAYS))
+    log("Соцсети:", "полный прогон всех роликов" if FULL else f"только ролики с {SINCE} (полный — раз в {FULL_EVERY} дн.)")
     # запасной запуск по расписанию ничего не делает, если сегодня уже всё собрано
     if os.environ.get("GITHUB_EVENT_NAME") == "schedule" and raw.get("lastOk") == str(TODAY):
         log("Сегодня данные уже собраны — запасной запуск пропускаю")
         return
 
+    full_ok = True
     for name, fn in [("Instagram", collect_instagram), ("TikTok", collect_tiktok),
                      ("YouTube", collect_youtube), ("VK", collect_vk)]:
         try:
             got = fn()
         except Exception as e:
             fail(name, e)
+            if name in ("Instagram", "TikTok"):
+                full_ok = False
             continue
-        log(f"{name}: {len(got)} роликов с {CFG['startDate']}")
+        log(f"{name}: {len(got)} роликов с {SINCE}")
+        if name in ("Instagram", "TikTok") and not got:
+            full_ok = False
         for v in got:
             rec = vids.setdefault(v["id"], {"snap": {}})
             rec.update({k: v[k] for k in ("platform", "url", "title", "published", "account", "codes")})
             rec["snap"][str(SNAP)] = max(v["views"], rec["snap"].get(str(SNAP), 0))
+
+    if FULL and full_ok:
+        raw["lastFull"] = str(TODAY)
 
     try:
         collect_wb(raw)
