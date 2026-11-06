@@ -580,14 +580,14 @@ def collect_wb(raw):
     if BASE_JUST_FETCHED:
         gap()
     got_subs = False
-    # «Базовый» токен: этот метод WB — 1 запрос в ЧАС, и неудачная попытка тоже сжигает час.
-    # Поэтому не пробуем, если с прошлой попытки прошло меньше 61 минуты.
+    # Персональный токен: лимит мягкий (несколько запросов в минуту). Защита только от
+    # повтора в ту же минуту; если WB всё же попросит подождать — ждём ниже по заголовку.
     now = dt.datetime.now(dt.timezone.utc)
     last_try = raw.get("subsLastTry")
     since = (now - dt.datetime.fromisoformat(last_try)).total_seconds() / 60 if last_try else 999
     try:
-        if since < 61 and not os.environ.get("WB_FAST"):
-            raise RuntimeError(f"прошло {since:.0f} мин с прошлой попытки — WB разрешает 1 запрос в час, пробую в следующий запуск")
+        if since < 2 and not os.environ.get("WB_FAST"):
+            raise RuntimeError(f"прошло {since:.0f} мин с прошлой попытки — пробую в следующий запуск")
         raw["subsLastTry"] = now.isoformat()
         last_f = cum_f[max(cum_f)] if cum_f else {}
         srow, rows_nm, clicks_nm = {}, [], {}
@@ -700,8 +700,18 @@ def collect_ads(raw):
         if i:
             time.sleep(WB_PAUSE)
         q = ",".join(str(x) for x in ids[i:i + 50])
-        res = http("GET", f"{api}/adv/v3/fullstats?ids={q}&beginDate={begin}&endDate={end}",
-                   headers={"Authorization": tok}) or []
+        res = None
+        for attempt in range(4):          # у статистики рекламы свой лимит — ждём по минуте
+            try:
+                time.sleep(65 if attempt else 25)
+                res = http("GET", f"{api}/adv/v3/fullstats?ids={q}&beginDate={begin}&endDate={end}",
+                           headers={"Authorization": tok}, retries=0) or []
+                break
+            except urllib.error.HTTPError as e:
+                if e.code != 429 or attempt == 3:
+                    raise
+                log(f"Реклама: лимит WB, жду минуту (попытка {attempt + 2} из 4)")
+        res = res or []
         for camp in res:
             for day in camp.get("days") or []:
                 s = (day.get("date") or "")[:10]
@@ -954,10 +964,14 @@ def main():
         collect_wb(raw)
     except Exception as e:
         fail("WB", e)
-    try:
-        collect_ads(raw)
-    except Exception as e:
-        fail("Реклама WB", e)
+    if CFG.get("ads", True) is False:
+        raw["adsAccess"] = None             # реклама выключена в config.json — блок в приложении скрыт
+        log("Реклама WB: выключена в настройках — пропускаю")
+    else:
+        try:
+            collect_ads(raw)
+        except Exception as e:
+            fail("Реклама WB", e)
 
     if str(SNAP) in raw.get("cumSubs", {}) and str(SNAP) in raw.get("cumFunnel", {}):
         raw["lastOk"] = str(TODAY)
