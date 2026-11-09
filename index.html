@@ -288,8 +288,8 @@ const rub = n => fmt(n) + ' ₽';
 const sum = a => a.reduce((x,y) => x+y, 0);
 let D, period = '30', skuSort = 'views', pfSel = 'all', codeSel = 'all';
 
-function range(p){ const N = D.dates.length; const len = p === 'all' ? N : +p; return [N-len, N]; }
-function prevRange(p){ if (p === 'all') return null; const [a] = range(p); const len = +p; return a - len >= 0 ? [a-len, a] : null; }
+function range(p){ const N = D.dates.length; const len = p === 'all' ? N : +p; return [Math.max(0, N-len), N]; }
+function prevRange(p){ if (p === 'all') return null; const N = D.dates.length, len = +p, a = N - len; return a - len >= 0 ? [a-len, a] : null; }
 const sl = (arr,[a,b]) => arr.slice(a,b);
 
 function deltaHTML(cur, prev){
