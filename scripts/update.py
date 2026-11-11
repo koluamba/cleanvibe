@@ -890,7 +890,12 @@ def build(raw):
                          card=wb_daily(nms) if nms else None,
                          ads=ads_daily(nms) if nms and raw.get("adsAccess") else None,
                          base=base_of(nms)))
+    bad_codes = []
     for c in sorted(set(labels) - known):
+        if not re.fullmatch(r"WW\d{7}", c):
+            # опечатка в коде (лишняя/пропущенная цифра) — такого кода на WB нет; не делаем из него «товар»
+            bad_codes.append(dict(code=c, videos=[v["url"] for v in videos if c in v["codes"]]))
+            continue
         skus.append(dict(sku=c, name=(labels.get(c) or c).capitalize(), codes=[c], unknown=True,
                          daily=subs_daily([c]), byCodeWB={c: subs_daily([c])}))
 
@@ -904,6 +909,7 @@ def build(raw):
         "coef": float(CFG.get("coef", 1.9)),
         "adsAccess": raw.get("adsAccess"),
         "errors": ERRORS,
+        "badCodes": bad_codes,
         "vkDebug": VK_DEBUG,
         "ttDebug": TT_DEBUG,
         "raw": raw,
