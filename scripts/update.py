@@ -217,6 +217,7 @@ def collect_tiktok():
     # каждый профиль — отдельным запуском: один «капризный» профиль не ломает остальные
     for u in users:
         dbg = {"profile": u}
+        bad = []
         try:
             good, n, bad = _tt_items({"profiles": [u], "resultsPerPage": LIMIT,
                                       "oldestPostDate": str(SINCE), "profileSorting": "latest"})
@@ -238,6 +239,9 @@ def collect_tiktok():
         TT_DEBUG.append(dbg)
         log("TikTok", dbg)
         got += good
+    # все профили упали с ошибкой (например, неверный токен Apify) — показываем ошибку, а не «0 роликов»
+    if not got and TT_DEBUG and all("fail" in x for x in TT_DEBUG):
+        raise RuntimeError(TT_DEBUG[0]["fail"])
     out, seen = [], set()
     for x in got:
         if str(x.get("id")) in seen:
