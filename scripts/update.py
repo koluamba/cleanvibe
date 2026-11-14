@@ -665,6 +665,41 @@ def collect_wb(raw):
         fail("WB карточки", f"HTTP {e.code} — лимит токена WB")
 
 
+def collect_search_texts(raw):
+    """Поисковые запросы WB, по которым находят карточки бренда: период с даты старта
+    против такого же периода до старта. Нужен для анализа брендовых запросов («cleanvibe» и т.п.)."""
+    tok = os.environ.get("WB_TOKEN")
+    nms = sorted(int(x) for x in raw.get("products", {}))
+    if not tok or not nms:
+        return
+    url = "https://seller-analytics-api.wildberries.ru/api/v2/search-report/product/search-texts"
+    n = (SNAP - START).days + 1
+    cur_p = {"start": str(START), "end": str(SNAP)}
+    past_p = {"start": str(START - dt.timedelta(days=n)), "end": str(START - dt.timedelta(days=1))}
+    keep = ("frequency", "weekFrequency", "openCard", "addToCart", "orders", "medianPosition", "avgPosition", "visibility")
+
+    def slim(v):
+        if isinstance(v, dict):
+            return {k: v.get(k) for k in ("current", "dynamics", "past") if k in v}
+        return v
+
+    rows = []
+    for i in range(0, len(nms), 50):
+        time.sleep(WB_PAUSE)
+        body = {"currentPeriod": cur_p, "pastPeriod": past_p, "nmIds": nms[i:i + 50],
+                "topOrderBy": "openCard", "orderBy": {"field": "openCard", "mode": "desc"},
+                "limit": 30, "includeSubstitutedSKUs": False, "includeSearchTexts": True}
+        j = http("POST", url, body, {"Authorization": tok})
+        for it in ((j or {}).get("data") or {}).get("items") or []:
+            r = {"text": it.get("text"), "nmId": it.get("nmId")}
+            for k in keep:
+                if k in it:
+                    r[k] = slim(it[k])
+            rows.append(r)
+    raw["searchTexts"] = {"date": str(SNAP), "current": cur_p, "past": past_p, "rows": rows}
+    log(f"WB поисковые запросы {cur_p['start']}…{cur_p['end']} против {past_p['start']}…{past_p['end']}: {len(rows)} строк")
+
+
 def collect_ads(raw):
     """Внутренняя реклама WB по карточкам бренда (нужна категория токена «Продвижение»)."""
     tok = os.environ.get("WB_TOKEN")
@@ -974,6 +1009,11 @@ def main():
         collect_wb(raw)
     except Exception as e:
         fail("WB", e)
+    try:
+        collect_search_texts(raw)
+    except Exception as e:
+        fail("WB поисковые запросы", e)
+
     if CFG.get("ads", True) is False:
         raw["adsAccess"] = None             # реклама выключена в config.json — блок в приложении скрыт
         log("Реклама WB: выключена в настройках — пропускаю")
